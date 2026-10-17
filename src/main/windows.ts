@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Channels, type MenuCommand, type OpenedFile } from '../shared/ipc'
+import { RENDERER_URL } from './rendererProtocol'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 
@@ -49,7 +50,7 @@ export const createWindow = (filePath?: string) => {
   if (process.env.VITE_DEV_SERVER_URL) {
     void win.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
-    void win.loadFile(path.join(here, '../dist/index.html'))
+    void win.loadURL(RENDERER_URL)
   }
   return win
 }

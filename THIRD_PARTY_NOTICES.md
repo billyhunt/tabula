@@ -41,8 +41,9 @@ the fonts are not sold on their own.
 
 ## Libraries
 
-Excalidraw and Tabula pull in about 290 runtime packages: mostly MIT, plus
-ISC, BSD-3-Clause, Apache-2.0, CC0-1.0, 0BSD, Unlicense and
+Excalidraw and Tabula pull in about 380 runtime packages, including the
+Anthropic and Model Context Protocol SDKs (MIT): mostly MIT, plus ISC,
+Apache-2.0, BSD-3-Clause, BSD-2-Clause, CC0-1.0, 0BSD, Unlicense, Zlib and
 MPL-2.0/Apache-2.0. Their full licence texts and NOTICE files are collected
 into `licenses/THIRD_PARTY_LICENSES.txt` by `scripts/collect-licenses.mjs`,
 which runs before every package build and fails if any bundled package lacks

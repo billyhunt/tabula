@@ -2,11 +2,12 @@
  * Excalidraw in Alethia's zine dress: paper islands, hard black rules, square
  * corners, no soft shadows, one hot orange for the active state.
  *
- * Selectors are scoped under .canvas so they outrank Excalidraw's own
+ * Selectors are scoped under .canvas (and the body-level container Excalidraw
+ * portals its dialogs into) so they outrank Excalidraw's own
  * `.excalidraw` and `.excalidraw.theme--dark` rules without !important.
  */
 
-.canvas .excalidraw {
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) {
   --ui-font: var(--font-prose);
   --color-primary: var(--accent);
   --color-primary-darker: #8f2000;
@@ -51,7 +52,7 @@
   --modal-shadow: none;
 }
 
-.canvas .excalidraw.theme--dark {
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container).theme--dark {
   --color-primary: var(--accent);
   --color-primary-light: var(--selection);
   --color-surface-primary-container: var(--accent-hot);
@@ -78,40 +79,40 @@
 }
 
 /* Hard rules on every floating island, menu and dialog. */
-.canvas .excalidraw .Island,
-.canvas .excalidraw .dropdown-menu-container,
-.canvas .excalidraw .Modal__content,
-.canvas .excalidraw .popover {
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .Island,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .dropdown-menu-container,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .Modal__content,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .popover {
   border: 2px solid var(--border);
   box-shadow: none;
   border-radius: 0;
 }
 
-.canvas .excalidraw .App-toolbar .Island {
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .App-toolbar .Island {
   border-width: var(--rule);
 }
 
 /* Square tool buttons, mono labels. */
-.canvas .excalidraw .ToolIcon__icon,
-.canvas .excalidraw .ToolIcon,
-.canvas .excalidraw button,
-.canvas .excalidraw .color-picker__button,
-.canvas .excalidraw input {
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .ToolIcon__icon,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .ToolIcon,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) button,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .color-picker__button,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) input {
   border-radius: 0;
 }
 
-.canvas .excalidraw .ToolIcon__keybinding,
-.canvas .excalidraw .dropdown-menu-item__shortcut,
-.canvas .excalidraw .HintViewer,
-.canvas .excalidraw .excalidraw-tooltip {
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .ToolIcon__keybinding,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .dropdown-menu-item__shortcut,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .HintViewer,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .excalidraw-tooltip {
   font-family: var(--font-mono);
   letter-spacing: 0.04em;
 }
 
-.canvas .excalidraw .App-menu__left h3,
-.canvas .excalidraw .App-menu__left .control-label,
-.canvas .excalidraw fieldset legend,
-.canvas .excalidraw .Modal__content h2 {
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .App-menu__left h3,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .App-menu__left .control-label,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) fieldset legend,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .Modal__content h2 {
   font-family: var(--font-mono);
   font-size: 0.66rem;
   font-weight: 500;
@@ -119,7 +120,7 @@
   text-transform: uppercase;
 }
 
-.canvas .excalidraw .welcome-screen-center__heading {
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .welcome-screen-center__heading {
   font-family: var(--font-display);
   color: var(--text);
 }

@@ -8,17 +8,19 @@
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
-    "postinstall": "node scripts/copy-fonts.mjs",
+    "postinstall": "node scripts/copy-fonts.mjs && node scripts/brand-dev-electron.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "package": "npm run licenses && npm run build && electron-builder --mac --dir",
     "test": "vitest run",
-    "licenses": "node scripts/collect-licenses.mjs"
+    "licenses": "node scripts/collect-licenses.mjs",
+    "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
     "@excalidraw/excalidraw": "0.18.0-43a92e6",
+    "@excalidraw/mermaid-to-excalidraw": "2.2.2",
     "@fontsource/archivo": "^5.3.0",
     "@fontsource/archivo-black": "^5.3.0",
     "@fontsource/dm-mono": "^5.3.0",

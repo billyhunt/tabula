@@ -1,0 +1,217 @@
+/* File › Browse Versions…: a zine panel, not a soft sheet. Hard rule, square
+   corners, mono labels; the only colour is the hot orange of the selection. */
+
+.versions-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above Excalidraw's own dialogs and popovers. */
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: rgb(17 17 17 / 0.35);
+  /* The titlebar's drag region would otherwise swallow clicks meant to
+     dismiss the dialog. */
+  -webkit-app-region: no-drag;
+}
+
+.versions-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 100%);
+  height: min(560px, 100%);
+  background: var(--panel);
+  color: var(--panel-fg);
+  border: var(--rule) solid var(--border);
+  box-shadow: 8px 8px 0 var(--border);
+  outline: none;
+}
+
+.versions-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  border-bottom: var(--rule) solid var(--border);
+}
+
+.versions-header h2 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.versions-file {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.versions-empty {
+  flex: 1;
+  margin: 0;
+  padding: 1.5rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.versions-body {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+.versions-list {
+  overflow-y: auto;
+  border-right: var(--rule) solid var(--border);
+}
+
+.versions-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.versions-row:hover {
+  background: var(--selection);
+}
+
+/* Focus follows the selection, so the ring sits on orange: always ink. */
+.versions-row:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: -5px;
+}
+
+/* Ink on hot orange clears AA (5.4:1) on either ground, so the selection
+   looks the same in light and dark. */
+.versions-row.is-selected {
+  background: var(--accent-hot);
+  color: #111111;
+}
+
+.versions-relative {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.versions-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+.versions-preview {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Pinned to the pane rather than sized by its content, so a tall drawing
+   scales down to fit instead of pushing the dialog open. */
+.versions-preview-image {
+  position: absolute;
+  inset: 1rem;
+}
+
+.versions-preview-image svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.versions-note {
+  position: absolute;
+  inset: auto 1rem 1rem;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.versions-error {
+  margin: 0;
+  padding: 0.6rem 1rem;
+  border-top: var(--rule) solid var(--border);
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.versions-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border-top: var(--rule) solid var(--border);
+}
+
+.versions-button {
+  padding: 0.45rem 1rem;
+  border: 2px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.versions-button:hover,
+.versions-button:focus-visible {
+  outline: none;
+  background: var(--border);
+  color: var(--bg);
+}
+
+.versions-button.is-primary {
+  background: var(--code-bg);
+  color: var(--accent-hot);
+  border-color: var(--code-bg);
+}
+
+.versions-button.is-primary:hover,
+.versions-button.is-primary:focus-visible {
+  background: var(--accent-hot);
+  color: var(--code-bg);
+  border-color: var(--accent-hot);
+}
+
+@media (prefers-color-scheme: dark) {
+  .versions-backdrop {
+    background: rgb(0 0 0 / 0.6);
+  }
+
+  .versions-button.is-primary {
+    border-color: var(--accent-hot);
+  }
+}

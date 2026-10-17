@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Channels, type OpenedFile } from '../shared/ipc'
 import type { SettingsPatch } from '../shared/settings'
 import { getSettings, updateSettings } from './settings'
+import { snapshotVersion } from './versions'
 
 // Obsidian Excalidraw (.excalidraw.md) is the native format; plain
 // .excalidraw files still open and save in their own format.
@@ -20,8 +21,19 @@ export const saveDialogPath = (suggestedName: string): string => {
   return path.join(dir && existsSync(dir) ? dir : app.getPath('documents'), suggestedName)
 }
 
-/** Writes a drawing to disk. The single place drawings are written. */
+/**
+ * Writes a drawing to disk. The single place drawings are written, so every
+ * save -- manual, autosave or agent -- first keeps what it replaces.
+ */
 export const writeDrawing = async (filePath: string, contents: string) => {
+  const current = await readFile(filePath, 'utf8').catch(() => null)
+  if (current !== null && current !== contents) {
+    // History is a safety net, not a precondition: a failed snapshot must
+    // never cost the user their save.
+    await snapshotVersion(filePath, current).catch((err: unknown) =>
+      console.error('version snapshot failed:', err),
+    )
+  }
   await writeFile(filePath, contents, 'utf8')
 }
 
