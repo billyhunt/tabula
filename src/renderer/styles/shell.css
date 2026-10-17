@@ -1,0 +1,55 @@
+.app {
+  display: grid;
+  grid-template-rows: var(--titlebar-h) 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app.is-fullscreen {
+  grid-template-rows: 0 1fr;
+}
+
+/* Alethia's titlebar: a hard black strip, mono uppercase name. The whole
+   strip is the drag region; nothing clickable lives inside it. */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Clears the traffic lights, which macOS draws over our chrome. */
+  padding-left: 84px;
+  padding-right: 0.9rem;
+  background: var(--border);
+  color: var(--bg);
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+.titlebar-name,
+.titlebar-brand {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.titlebar-brand {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  color: var(--accent-hot);
+}
+
+/* Unsaved work reads as a hot square, not a soft dot. */
+.dirty-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--accent-hot);
+}
+
+.canvas {
+  position: relative;
+  min-height: 0;
+}

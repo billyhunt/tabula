@@ -1,0 +1,125 @@
+/*
+ * Excalidraw in Alethia's zine dress: paper islands, hard black rules, square
+ * corners, no soft shadows, one hot orange for the active state.
+ *
+ * Selectors are scoped under .canvas so they outrank Excalidraw's own
+ * `.excalidraw` and `.excalidraw.theme--dark` rules without !important.
+ */
+
+.canvas .excalidraw {
+  --ui-font: var(--font-prose);
+  --color-primary: var(--accent);
+  --color-primary-darker: #8f2000;
+  --color-primary-darkest: #6b1800;
+  --color-primary-hover: var(--accent);
+  --color-primary-light: var(--selection);
+  --color-brand-hover: var(--accent);
+  --color-brand-active: var(--accent-hot);
+
+  /* The selected tool: hot orange with black ink, as in Alethia's tree. */
+  --color-surface-primary-container: var(--accent-hot);
+  --color-on-primary-container: #111111;
+
+  --island-bg-color: var(--bg);
+  --default-bg-color: var(--bg);
+  --input-bg-color: var(--bg);
+  --popup-bg-color: var(--bg);
+  --sidebar-bg-color: var(--bg);
+  --color-surface-lowest: var(--bg);
+  --color-surface-low: var(--bg);
+  --color-surface-mid: var(--selection);
+  --color-surface-high: var(--selection);
+  --button-hover-bg: var(--selection);
+  --color-on-surface: var(--text);
+  --text-primary-color: var(--text);
+  --icon-fill-color: var(--text);
+
+  --default-border-color: var(--border);
+  --dialog-border-color: var(--border);
+  --sidebar-border-color: var(--border);
+  --input-border-color: var(--border);
+  --focus-highlight-color: var(--accent-hot);
+
+  /* Read by the canvas renderer for selection boxes and handles. */
+  --color-selection: var(--accent-hot);
+  --color-slider-track: var(--selection);
+  --color-slider-thumb: var(--text);
+
+  --border-radius-md: 0;
+  --border-radius-lg: 0;
+  --shadow-island: none;
+  --modal-shadow: none;
+}
+
+.canvas .excalidraw.theme--dark {
+  --color-primary: var(--accent);
+  --color-primary-light: var(--selection);
+  --color-surface-primary-container: var(--accent-hot);
+  --color-on-primary-container: #111111;
+  --island-bg-color: var(--bg);
+  --default-bg-color: var(--bg);
+  --input-bg-color: var(--bg);
+  --popup-bg-color: var(--bg);
+  --sidebar-bg-color: var(--bg);
+  --color-surface-lowest: var(--bg);
+  --color-surface-low: var(--bg);
+  --color-surface-mid: var(--selection);
+  --color-surface-high: var(--selection);
+  --button-hover-bg: var(--selection);
+  --color-on-surface: var(--text);
+  --text-primary-color: var(--text);
+  --icon-fill-color: var(--text);
+  --default-border-color: var(--border);
+  --dialog-border-color: var(--border);
+  --sidebar-border-color: var(--border);
+  --color-selection: var(--accent-hot);
+  --color-slider-track: var(--selection);
+  --color-slider-thumb: var(--text);
+}
+
+/* Hard rules on every floating island, menu and dialog. */
+.canvas .excalidraw .Island,
+.canvas .excalidraw .dropdown-menu-container,
+.canvas .excalidraw .Modal__content,
+.canvas .excalidraw .popover {
+  border: 2px solid var(--border);
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.canvas .excalidraw .App-toolbar .Island {
+  border-width: var(--rule);
+}
+
+/* Square tool buttons, mono labels. */
+.canvas .excalidraw .ToolIcon__icon,
+.canvas .excalidraw .ToolIcon,
+.canvas .excalidraw button,
+.canvas .excalidraw .color-picker__button,
+.canvas .excalidraw input {
+  border-radius: 0;
+}
+
+.canvas .excalidraw .ToolIcon__keybinding,
+.canvas .excalidraw .dropdown-menu-item__shortcut,
+.canvas .excalidraw .HintViewer,
+.canvas .excalidraw .excalidraw-tooltip {
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+.canvas .excalidraw .App-menu__left h3,
+.canvas .excalidraw .App-menu__left .control-label,
+.canvas .excalidraw fieldset legend,
+.canvas .excalidraw .Modal__content h2 {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.canvas .excalidraw .welcome-screen-center__heading {
+  font-family: var(--font-display);
+  color: var(--text);
+}
