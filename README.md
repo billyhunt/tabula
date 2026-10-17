@@ -13,6 +13,15 @@ starts from. It is a sibling of [Alethia](https://github.com/billyhunt/alethia-m
 a markdown editor, and shares its look: paper ground, hard black rules, one
 hot orange.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/capabilities-dark.svg">
+  <img alt="Diagram of Tabula: drawing by hand and an Obsidian vault feed into Tabula, which saves .excalidraw files. Mermaid, AI agents over MCP, an Ask bar, and PNG, SVG, PDF and Mermaid export are marked as planned. Below, a gallery of Excalidraw shapes and fill styles." src="docs/capabilities-light.svg">
+</picture>
+
+*Drawn in Tabula. The source is
+[`docs/capabilities.excalidraw.md`](docs/capabilities.excalidraw.md): open it
+in Tabula, or in Obsidian with the Excalidraw plugin.*
+
 > Tabula is an independent project. It is not affiliated with or endorsed by
 > Excalidraw.
 

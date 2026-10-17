@@ -48,6 +48,13 @@ export const App = () => {
   useEffect(() => window.tabula.setTitle(filePath), [filePath])
   useEffect(() => window.tabula.onFullscreen(setFullscreen), [])
 
+  // Dev only: lets scripts driving the app over the remote-debugging port
+  // reach the editor. Never present in packaged builds.
+  useEffect(() => {
+    if (!import.meta.env.DEV || !api) return
+    ;(window as unknown as { __excalidraw?: ExcalidrawImperativeAPI }).__excalidraw = api
+  }, [api])
+
   const markSaved = useCallback(() => {
     if (!api) return
     savedHash.current = hashElementsVersion(api.getSceneElementsIncludingDeleted())
