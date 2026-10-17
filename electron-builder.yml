@@ -1,0 +1,40 @@
+appId: com.billyhunt.tabula
+productName: Tabula
+directories:
+  buildResources: build
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+  # MIT, OFL and Apache-2.0 all require their notices to travel with every
+  # redistributed copy, including inside the .app.
+  - THIRD_PARTY_NOTICES.md
+  - licenses/**
+asar: true
+# On macOS electron-builder drops Electron's own licence files, so copy them
+# into Resources/ ourselves.
+extraResources:
+  - from: node_modules/electron/dist/LICENSE
+    to: LICENSE.electron.txt
+  - from: node_modules/electron/dist/LICENSES.chromium.html
+    to: LICENSES.chromium.html
+mac:
+  category: public.app-category.graphics-design
+  target: [dir]
+  # Unsigned local builds. Add hardenedRuntime, entitlements and notarize
+  # when a Developer ID certificate is available.
+  identity: null
+  darkModeSupport: true
+fileAssociations:
+  - ext: [excalidraw]
+    name: Excalidraw Drawing
+    role: Editor
+    mimeType: application/vnd.excalidraw+json
+    rank: Owner
+  # .excalidraw.md is still .md to macOS. Alternate keeps Tabula under
+  # "Open With" without contending with Alethia for markdown.
+  - ext: [md]
+    name: Markdown Document
+    role: Editor
+    rank: Alternate

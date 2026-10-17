@@ -12,8 +12,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
-    "package": "npm run build && electron-builder --mac --dir",
-    "test": "vitest run"
+    "package": "npm run licenses && npm run build && electron-builder --mac --dir",
+    "test": "vitest run",
+    "licenses": "node scripts/collect-licenses.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.0-43a92e6",
