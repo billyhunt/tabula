@@ -14,7 +14,13 @@ import type {
 } from '@excalidraw/excalidraw/types'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { OpenedFile } from '../shared/ipc'
+import { AskBar } from './agent/AskBar'
+import { SettingsDialog, useSettingsDialog } from './agent/SettingsDialog'
+import { TextToDiagram } from './agent/TextToDiagram'
+import { useAgentActivity } from './agent/useAgentActivity'
+import { useCanvasTools } from './agent/useCanvasTools'
 import { Titlebar } from './components/Titlebar'
+import { useExports } from './export/useExports'
 import type { DocumentController } from './document'
 import {
   isObsidianMarkdown,
@@ -24,8 +30,11 @@ import {
   type ObsidianEnvelope,
   type SceneJson,
 } from './format/obsidian'
+import { useMermaidPaste } from './mermaid/useMermaidPaste'
 import { useMenuCommand } from './menuCommands'
 import { useSystemTheme } from './useSystemTheme'
+import { useAutosave } from './versions/useAutosave'
+import { VersionsDialog } from './versions/VersionsDialog'
 
 // Paper, matching Alethia. Excalidraw's dark mode inverts the canvas, which
 // turns this into a near-black ground.
@@ -198,7 +207,12 @@ export const App = () => {
   )
 
   // Features hook in here.
-  void doc
+  useAutosave(doc, api)
+  useExports(api, doc)
+  useCanvasTools(api, doc)
+  const onPaste = useMermaidPaste(api)
+  const settingsDialog = useSettingsDialog()
+  const agentLabel = useAgentActivity()
 
   const loadRef = useRef(load)
   loadRef.current = load
@@ -209,12 +223,13 @@ export const App = () => {
 
   return (
     <div className={`app${fullscreen ? ' is-fullscreen' : ''}`}>
-      <Titlebar name={filePath ? basename(filePath) : 'Untitled'} dirty={dirty} />
+      <Titlebar name={filePath ? basename(filePath) : 'Untitled'} dirty={dirty} agent={agentLabel} />
       <main className="canvas">
         <Excalidraw
           onExcalidrawAPI={setApi}
           theme={theme}
           onChange={onChange}
+          onPaste={onPaste}
           initialData={{ appState: { viewBackgroundColor: PAPER } }}
           UIOptions={{
             canvasActions: { loadScene: false, saveToActiveFile: false, toggleTheme: false },
@@ -252,8 +267,12 @@ export const App = () => {
             <WelcomeScreen.Hints.MenuHint />
             <WelcomeScreen.Hints.HelpHint />
           </WelcomeScreen>
+          <TextToDiagram api={api} />
         </Excalidraw>
+        <AskBar api={api} onOpenSettings={settingsDialog.show} />
       </main>
+      <VersionsDialog doc={doc} />
+      <SettingsDialog open={settingsDialog.open} close={settingsDialog.close} />
     </div>
   )
 }

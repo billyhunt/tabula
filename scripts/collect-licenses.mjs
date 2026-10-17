@@ -25,6 +25,9 @@ const OVERRIDES = {
   fastdom: 'licenses/MIT-fastdom.txt',
   strictdom: 'licenses/MIT-strictdom.txt',
   'react-remove-scroll-bar': 'licenses/MIT-react-remove-scroll-bar.txt',
+  // The repo root is Apache-2.0; the client libraries the npm package is
+  // built from are MIT, under libraries/LICENSE.
+  standardwebhooks: 'licenses/MIT-standardwebhooks.txt',
 }
 
 const overrideFor = (name) =>

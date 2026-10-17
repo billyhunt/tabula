@@ -1,0 +1,353 @@
+/* The in-app agent: the title-bar badge, the Ask bar and Settings. Same zine
+   rules as the rest: hard black rules, square corners, mono labels, one hot
+   orange. Colours come from the tokens, so dark mode follows macOS. */
+
+/* ── Title-bar badge ─────────────────────────────────────────────────────── */
+
+.titlebar-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+/* A status read-out inside the drag region: never clickable. */
+.agent-badge {
+  padding: 0.15rem 0.5rem;
+  background: var(--accent-hot);
+  color: #111111;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40vw;
+  pointer-events: none;
+}
+
+.agent-badge[hidden] {
+  display: none;
+}
+
+/* ── Shared controls ─────────────────────────────────────────────────────── */
+
+.agent-button {
+  padding: 0.45rem 1rem;
+  border: 2px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.agent-button:hover,
+.agent-button:focus-visible {
+  outline: none;
+  background: var(--border);
+  color: var(--bg);
+}
+
+.agent-button.is-primary {
+  background: var(--code-bg);
+  color: var(--accent-hot);
+  border-color: var(--code-bg);
+}
+
+.agent-button.is-primary:hover,
+.agent-button.is-primary:focus-visible {
+  background: var(--accent-hot);
+  color: var(--code-bg);
+  border-color: var(--accent-hot);
+}
+
+.agent-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* ── Ask bar ─────────────────────────────────────────────────────────────── */
+
+.ask-bar {
+  position: absolute;
+  left: 50%;
+  /* Clears Excalidraw's footer (zoom, undo, help). */
+  bottom: 4.5rem;
+  z-index: 20;
+  width: min(680px, calc(100% - 2rem));
+  transform: translateX(-50%);
+  background: var(--panel);
+  color: var(--panel-fg);
+  border: var(--rule) solid var(--border);
+  box-shadow: 6px 6px 0 var(--border);
+}
+
+.ask-log {
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 0.8rem 1rem;
+  border-bottom: var(--rule) solid var(--border);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.ask-log p {
+  margin: 0 0 0.5rem;
+}
+
+.ask-log p:last-child {
+  margin-bottom: 0;
+}
+
+.ask-prompt {
+  font-weight: 600;
+}
+
+.ask-text {
+  white-space: pre-wrap;
+}
+
+/* Tool steps read as a compact mono ledger. */
+.ask-step {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ask-step::before {
+  content: '→ ';
+  color: var(--accent);
+}
+
+.ask-step.is-working {
+  color: var(--accent);
+}
+
+.ask-error {
+  padding: 0.5rem 0.6rem;
+  border-left: var(--rule) solid var(--accent-hot);
+}
+
+.ask-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ask-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.5rem 0.5rem 0.5rem 0;
+}
+
+/* The label is a black block with the hot orange on it, like the title bar. */
+.ask-label {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  margin: -0.5rem 0;
+  padding: 0 0.9rem;
+  background: var(--code-bg);
+  color: var(--accent-hot);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ask-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.2rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-prose);
+  font-size: 1rem;
+  outline: none;
+}
+
+.ask-input::placeholder {
+  color: var(--text-muted);
+}
+
+.ask-scope {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.ask-setup p {
+  flex: 1;
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+/* ── Settings ────────────────────────────────────────────────────────────── */
+
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above Excalidraw's own dialogs and popovers. */
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: rgb(17 17 17 / 0.35);
+  -webkit-app-region: no-drag;
+}
+
+.settings-dialog {
+  width: min(560px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--panel);
+  color: var(--panel-fg);
+  border: var(--rule) solid var(--border);
+  box-shadow: 8px 8px 0 var(--border);
+  outline: none;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1rem;
+  border-bottom: var(--rule) solid var(--border);
+}
+
+.settings-header h2,
+.settings-section h3 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-bottom: var(--rule) solid var(--border);
+}
+
+.settings-section:last-child {
+  border-bottom: 0;
+}
+
+.settings-section h3 {
+  color: var(--accent);
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.settings-check input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--accent-hot);
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.settings-field span {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.settings-field input {
+  padding: 0.45rem 0.6rem;
+  border: 2px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.settings-field input:focus {
+  outline: none;
+  border-color: var(--accent-hot);
+}
+
+.settings-field input[aria-invalid='true'] {
+  border-color: var(--accent-hot);
+}
+
+.settings-status,
+.settings-note,
+.settings-error {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.settings-status {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.settings-status.is-error,
+.settings-error {
+  color: var(--accent);
+}
+
+.settings-note:empty,
+.settings-status:empty {
+  display: none;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings-backdrop {
+    background: rgb(0 0 0 / 0.6);
+  }
+
+  .agent-button.is-primary {
+    border-color: var(--accent-hot);
+  }
+}
