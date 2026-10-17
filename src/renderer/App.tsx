@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Excalidraw,
   MainMenu,
@@ -15,6 +15,7 @@ import type {
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { OpenedFile } from '../shared/ipc'
 import { Titlebar } from './components/Titlebar'
+import type { DocumentController } from './document'
 import {
   isObsidianMarkdown,
   newEnvelope,
@@ -23,6 +24,7 @@ import {
   type ObsidianEnvelope,
   type SceneJson,
 } from './format/obsidian'
+import { useMenuCommand } from './menuCommands'
 import { useSystemTheme } from './useSystemTheme'
 
 // Paper, matching Alethia. Excalidraw's dark mode inverts the canvas, which
@@ -52,7 +54,7 @@ export const App = () => {
   // reach the editor. Never present in packaged builds.
   useEffect(() => {
     if (!import.meta.env.DEV || !api) return
-    ;(window as unknown as { __excalidraw?: ExcalidrawImperativeAPI }).__excalidraw = api
+    window.__excalidraw = api
   }, [api])
 
   const markSaved = useCallback(() => {
@@ -84,38 +86,56 @@ export const App = () => {
     [api],
   )
 
-  const load = useCallback(
-    async (file: OpenedFile) => {
-      if (!api) return
-      let json = file.contents
-      if (isObsidianMarkdown(file.path)) {
-        try {
-          const parsed = parseObsidian(file.contents)
-          json = JSON.stringify(parsed.scene)
-          envelope.current = parsed.envelope
-        } catch (err) {
-          window.alert(`Couldn't open ${basename(file.path)}: ${(err as Error).message}`)
-          return
-        }
-      } else {
-        envelope.current = newEnvelope()
+  /**
+   * Puts file contents on the canvas. Throws when the contents can't be read
+   * as a drawing; the envelope only changes once parsing has succeeded.
+   */
+  const applyContents = useCallback(
+    async (contents: string, formatPath: string) => {
+      if (!api) throw new Error('The editor is still starting')
+      let json = contents
+      let nextEnvelope = newEnvelope()
+      if (isObsidianMarkdown(formatPath)) {
+        const parsed = parseObsidian(contents)
+        json = JSON.stringify(parsed.scene)
+        nextEnvelope = parsed.envelope
       }
       const blob = new Blob([json], { type: 'application/json' })
       const scene = await loadFromBlob(blob, api.getAppState(), api.getSceneElements())
+      envelope.current = nextEnvelope
       api.updateScene({
         elements: scene.elements,
         appState: { ...scene.appState, theme },
         captureUpdate: 'IMMEDIATELY',
       })
       if (scene.files) api.addFiles(Object.values(scene.files))
-      api.history.clear()
       if (scene.elements.length) {
         api.setViewport({ target: api.getSceneElements(), fit: 'scale-down' })
       }
+    },
+    [api, theme],
+  )
+
+  const load = useCallback(
+    async (file: OpenedFile) => {
+      if (!api) return
+      try {
+        await applyContents(file.contents, file.path)
+      } catch (err) {
+        window.alert(`Couldn't open ${basename(file.path)}: ${(err as Error).message}`)
+        return
+      }
+      api.history.clear()
       setFilePath(file.path)
       markSaved()
     },
-    [api, theme, markSaved],
+    [api, applyContents, markSaved],
+  )
+
+  // Restoring keeps undo history, so a restore can itself be undone.
+  const restore = useCallback(
+    (contents: string, formatPath: string) => applyContents(contents, formatPath),
+    [applyContents],
   )
 
   const confirmDiscard = useCallback(
@@ -123,23 +143,25 @@ export const App = () => {
     [dirty],
   )
 
+  const saveTo = useCallback(
+    async (target: string) => {
+      await window.tabula.saveFile(target, serialize(target))
+      setFilePath(target)
+      markSaved()
+      return target
+    },
+    [serialize, markSaved],
+  )
+
   const saveAs = useCallback(async () => {
     const target = await window.tabula.pickSavePath(filePath ?? NEW_FILE_NAME)
-    if (!target) return
-    await window.tabula.saveFile(target, serialize(target))
-    setFilePath(target)
-    markSaved()
-  }, [serialize, filePath, markSaved])
+    return target ? saveTo(target) : null
+  }, [filePath, saveTo])
 
-  const save = useCallback(async () => {
-    if (!filePath) return saveAs()
-    await window.tabula.saveFile(filePath, serialize(filePath))
-    markSaved()
-  }, [filePath, serialize, saveAs, markSaved])
-
-  const exportImage = useCallback(() => {
-    api?.updateScene({ appState: { openDialog: { name: 'imageExport' } } })
-  }, [api])
+  const save = useCallback(
+    () => (filePath ? saveTo(filePath) : saveAs()),
+    [filePath, saveTo, saveAs],
+  )
 
   const open = useCallback(async () => {
     if (!confirmDiscard()) return
@@ -147,37 +169,42 @@ export const App = () => {
     if (file) await load(file)
   }, [confirmDiscard, load])
 
-  const newDrawing = useCallback(() => {
-    if (!api || !confirmDiscard()) return
-    api.resetScene()
-    api.updateScene({ appState: { viewBackgroundColor: PAPER } })
-    api.history.clear()
-    setFilePath(null)
-    envelope.current = newEnvelope()
-    savedHash.current = hashElementsVersion([])
-    setDirty(false)
-  }, [api, confirmDiscard])
-
-  // The handlers change identity on every edit, so the subscriptions read
-  // them through a ref instead of re-subscribing.
-  const handlers = useRef({ newDrawing, open, save, saveAs, load, exportImage })
-  handlers.current = { newDrawing, open, save, saveAs, load, exportImage }
-
-  useEffect(
-    () =>
-      window.tabula.onMenuCommand((cmd) => {
-        const h = handlers.current
-        if (cmd === 'new') h.newDrawing()
-        else if (cmd === 'open') void h.open()
-        else if (cmd === 'save') void h.save()
-        else if (cmd === 'save-as') void h.saveAs()
-        else if (cmd === 'export-image') h.exportImage()
-      }),
-    [],
+  const newDrawing = useCallback(
+    (options?: { force?: boolean }) => {
+      if (!api || (!options?.force && !confirmDiscard())) return
+      api.resetScene()
+      api.updateScene({ appState: { viewBackgroundColor: PAPER } })
+      api.history.clear()
+      setFilePath(null)
+      envelope.current = newEnvelope()
+      savedHash.current = hashElementsVersion([])
+      setDirty(false)
+    },
+    [api, confirmDiscard],
   )
+
+  /** Handed to features; rebuilt when the document changes. */
+  const doc = useMemo<DocumentController>(
+    () => ({ filePath, dirty, load, restore, save, saveAs, saveTo, newDrawing, serialize }),
+    [filePath, dirty, load, restore, save, saveAs, saveTo, newDrawing, serialize],
+  )
+
+  useMenuCommand('new', () => newDrawing())
+  useMenuCommand('open', () => void open())
+  useMenuCommand('save', () => void save())
+  useMenuCommand('save-as', () => void saveAs())
+  useMenuCommand('export-image', () =>
+    api?.updateScene({ appState: { openDialog: { name: 'imageExport' } } }),
+  )
+
+  // Features hook in here.
+  void doc
+
+  const loadRef = useRef(load)
+  loadRef.current = load
   useEffect(() => {
     if (!api) return
-    return window.tabula.onFileOpened((file) => void handlers.current.load(file))
+    return window.tabula.onFileOpened((file) => void loadRef.current(file))
   }, [api])
 
   return (

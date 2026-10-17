@@ -17,15 +17,19 @@
     "licenses": "node scripts/collect-licenses.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@excalidraw/excalidraw": "0.18.0-43a92e6",
     "@fontsource/archivo": "^5.3.0",
     "@fontsource/archivo-black": "^5.3.0",
     "@fontsource/dm-mono": "^5.3.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "lz-string": "^1.5.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
