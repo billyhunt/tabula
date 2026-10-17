@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { stat } from 'node:fs/promises'
+import { lstat, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { ExportFileFormat } from '../../shared/agentTools'
 
@@ -52,6 +52,18 @@ const EXPORT_EXTENSIONS: Record<ExportFileFormat, readonly string[]> = {
 
 const statOrNull = (filePath: string) => stat(filePath).catch(() => null)
 
+/**
+ * Agents name files by path, and the extension check reads only the name.
+ * A symlink called board.excalidraw could point anywhere, so a write would
+ * clobber its target and a read could leak it. Symlinked folders are fine:
+ * the file itself must not be a link.
+ */
+const rejectSymlink = async (target: string) => {
+  if ((await lstat(target).catch(() => null))?.isSymbolicLink()) {
+    throw new Error(`${target} is a symbolic link; give the real file's path`)
+  }
+}
+
 /** Normalizes an absolute path whose folder exists; throws otherwise. */
 const resolveInExistingFolder = async (filePath: string) => {
   if (!path.isAbsolute(filePath)) throw new Error(`The path must be absolute: ${filePath}`)
@@ -63,6 +75,7 @@ const resolveInExistingFolder = async (filePath: string) => {
   if ((await statOrNull(normalized))?.isDirectory()) {
     throw new Error(`That path is a folder: ${normalized}`)
   }
+  await rejectSymlink(normalized)
   return normalized
 }
 
@@ -91,6 +104,7 @@ export const checkOpenPath = async (filePath: string): Promise<string> => {
     throw new Error('Only .excalidraw.md and .excalidraw drawings can be opened')
   }
   if (!(await statOrNull(target))?.isFile()) throw new Error(`No such file: ${target}`)
+  await rejectSymlink(target)
   return target
 }
 

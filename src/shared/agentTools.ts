@@ -368,15 +368,15 @@ export const findCanvasTool = (name: string) => CANVAS_TOOLS.find((tool) => tool
 export const BRIDGE_TOOLS = {
   /** Answers once the editor is up, so main knows a new window is ready. */
   ping: empty,
-  documentState: empty,
-  loadFile: z.strictObject({ path: z.string().min(1), contents: z.string() }),
+  loadFile: z.strictObject({
+    path: z.string().min(1),
+    contents: z.string(),
+    discardChanges: z.boolean().optional(),
+  }),
   renderExport: z.strictObject({ format: exportFormat, dark: z.boolean().optional() }),
   saveDocument: z.strictObject({ path: z.string().min(1).optional() }),
 }
 export type BridgeToolName = keyof typeof BRIDGE_TOOLS
-
-/** `documentState` result, in `json`. */
-export const documentStateResult = z.object({ filePath: z.string().nullable(), dirty: z.boolean() })
 
 /** `renderExport` result for svg and mermaid, in `json`; png comes back as `image`. */
 export const renderedText = z.object({ text: z.string(), warnings: z.array(z.string()) })

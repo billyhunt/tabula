@@ -2,7 +2,6 @@ import { app, type BrowserWindow } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
-  documentStateResult,
   exportInput,
   openFileInput,
   parseToolArgs,
@@ -32,7 +31,7 @@ export const FILE_TOOLS: Record<string, FileTool> = {
     const flag = overwrite ? 'w' : 'wx'
     let warnings: string[] = []
     if (format === 'pdf') {
-      await writePdf(renderedPdf.parse(rendered.json).pages, target)
+      await writePdf(renderedPdf.parse(rendered.json).pages, target, flag)
     } else if (format === 'png') {
       if (!rendered.image) throw new Error('The drawing could not be rendered')
       await writeFile(target, Buffer.from(rendered.image.base64, 'base64'), { flag })
@@ -49,18 +48,10 @@ export const FILE_TOOLS: Record<string, FileTool> = {
     const { path: requested, discardChanges } = parseToolArgs('open_file', openFileInput, args)
     const target = await checkOpenPath(requested)
     const contents = await readFile(target, 'utf8')
-    const win = await window()
-    if (!discardChanges) {
-      const state = documentStateResult.parse((await callCanvasTool(win, 'documentState', {})).json)
-      if (state.dirty) {
-        throw new Error(
-          'The current drawing has unsaved changes; save it first or pass discardChanges: true',
-        )
-      }
-    }
     // Loading through the bridge (rather than the fileOpened event) means the
-    // agent's next call already sees the new drawing.
-    await callCanvasTool(win, 'loadFile', { path: target, contents }, 60_000)
+    // agent's next call already sees the new drawing. The window refuses if
+    // the drawing has unsaved changes, unless told to discard them.
+    await callCanvasTool(await window(), 'loadFile', { path: target, contents, discardChanges }, 60_000)
     app.addRecentDocument(target)
     return { text: `Opened ${path.basename(target)}` }
   },

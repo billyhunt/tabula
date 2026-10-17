@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -85,5 +85,17 @@ describe('MCP file paths', () => {
     await expect(checkSavePath(path.join(dir, 'New.excalidraw'))).resolves.toBeTruthy()
     await expect(checkSavePath(path.join(dir, 'Notes.md'))).rejects.toThrow('.excalidraw.md')
     await expect(checkSavePath(path.join(dir, 'folder.excalidraw'))).rejects.toThrow('folder')
+  })
+
+  it('refuses drawing files that are symlinks, which could point anywhere', async () => {
+    const secret = path.join(dir, 'secret.txt')
+    await writeFile(secret, 'not a drawing')
+    const link = path.join(dir, 'Link.excalidraw')
+    await symlink(secret, link)
+    await expect(checkSavePath(link)).rejects.toThrow('symbolic link')
+    await expect(checkOpenPath(link)).rejects.toThrow('symbolic link')
+    await expect(checkExportPath('svg', path.join(dir, 'link.svg'), true)).resolves.toBeTruthy()
+    await symlink(secret, path.join(dir, 'link.svg'))
+    await expect(checkExportPath('svg', path.join(dir, 'link.svg'), true)).rejects.toThrow('symbolic link')
   })
 })
