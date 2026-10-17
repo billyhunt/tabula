@@ -9,6 +9,7 @@ files:
   - package.json
   # MIT, OFL and Apache-2.0 all require their notices to travel with every
   # redistributed copy, including inside the .app.
+  - LICENSE
   - THIRD_PARTY_NOTICES.md
   - licenses/**
 asar: true

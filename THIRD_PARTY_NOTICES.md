@@ -1,7 +1,8 @@
 # Third-party notices
 
-Tabula is built on [Excalidraw](https://github.com/excalidraw/excalidraw) and
-bundles the software and fonts below. Every copy of Tabula, including the
+Tabula is MIT licensed (see `LICENSE`). It is built on
+[Excalidraw](https://github.com/excalidraw/excalidraw) and bundles the
+software and fonts below. Every copy of Tabula, including the
 packaged `.app`, carries this file and the `licenses/` folder.
 
 ## Excalidraw — MIT
