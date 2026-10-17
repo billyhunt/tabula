@@ -84,9 +84,14 @@ ${bodies.join('\n')}
 
 /**
  * Prints SVG pages to a PDF. Chromium prints SVG as vector paths and real
- * text, so the PDF stays sharp and searchable.
+ * text, so the PDF stays sharp and searchable. `flag: 'wx'` refuses to
+ * replace a file that appeared while the pages were printing.
  */
-export const writePdf = async (pages: PdfPage[], filePath: string): Promise<void> => {
+export const writePdf = async (
+  pages: PdfPage[],
+  filePath: string,
+  flag: 'w' | 'wx' = 'w',
+): Promise<void> => {
   // A file rather than a data: URL, which Chromium caps at 2 MB — embedded
   // fonts and images easily pass that.
   const htmlPath = path.join(app.getPath('temp'), `tabula-pdf-${randomUUID()}.html`)
@@ -105,7 +110,7 @@ export const writePdf = async (pages: PdfPage[], filePath: string): Promise<void
       preferCSSPageSize: true,
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
     })
-    await writeFile(filePath, pdf)
+    await writeFile(filePath, pdf, { flag })
   } finally {
     win.destroy()
     await rm(htmlPath, { force: true })

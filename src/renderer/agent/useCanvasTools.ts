@@ -131,12 +131,8 @@ const buildHandlers = (
     // ── Bridge-only tools main uses for the MCP file tools ──
     ping: () => ({ text: 'ready' }),
 
-    documentState: () => ({
-      json: { filePath: docRef.current.filePath, dirty: docRef.current.dirty },
-    }),
-
     loadFile: async (args) => {
-      const file = parseToolArgs('loadFile', BRIDGE_TOOLS.loadFile, args)
+      const { discardChanges, ...file } = parseToolArgs('loadFile', BRIDGE_TOOLS.loadFile, args)
       // The editor shows an alert for a file it can't read, which would stall
       // the agent; catch the usual cases here and report them instead.
       try {
@@ -146,6 +142,9 @@ const buildHandlers = (
         const reason = err instanceof Error ? err.message : String(err)
         throw new Error(`Not a drawing Tabula can open: ${reason}`)
       }
+      // Checked here, right before replacing the scene, rather than in an
+      // earlier round trip the user could have edited after.
+      if (docRef.current.dirty && !discardChanges) throw new Error(UNSAVED)
       await docRef.current.load(file)
       return { text: `Opened ${file.path}` }
     },

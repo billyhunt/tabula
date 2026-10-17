@@ -31,8 +31,10 @@ export const createWindow = (filePath?: string) => {
     lastFocused = win
   })
   win.on('closed', () => {
+    editors.delete(win)
     if (lastFocused === win) lastFocused = null
   })
+  editors.add(win)
   lastFocused = win
   win.on('leave-full-screen', () => win.webContents.send(Channels.fullscreen, false))
 
@@ -62,13 +64,23 @@ export const openInWindow = async (win: BrowserWindow, filePath: string) => {
   app.addRecentDocument(filePath)
 }
 
+// Drawing windows only. Hidden helpers (the PDF printer) are BrowserWindows
+// too, but must never receive menu commands or agent calls.
+const editors = new Set<BrowserWindow>()
+
+/** Open drawing windows, oldest first. */
+export const editorWindows = (): BrowserWindow[] => [...editors]
+
 // Agents act while the user sits in a terminal, when no window has focus, so
 // "the window" means the one focused last, not merely any open window.
 let lastFocused: BrowserWindow | null = null
 
 /** The window menu commands and agents act on. */
-export const focusedWindow = (): BrowserWindow | undefined =>
-  BrowserWindow.getFocusedWindow() ?? lastFocused ?? BrowserWindow.getAllWindows()[0]
+export const focusedWindow = (): BrowserWindow | undefined => {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (focused && editors.has(focused)) return focused
+  return lastFocused ?? editorWindows()[0]
+}
 
 export const sendCommand = (cmd: MenuCommand) => {
   const win = focusedWindow()

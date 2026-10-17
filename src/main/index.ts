@@ -1,11 +1,11 @@
-import { app, BrowserWindow } from 'electron'
+import { app } from 'electron'
 import { registerAgentIpc } from './agent/ipc'
 import { startMcpController } from './agent/mcp'
 import { registerFileIpc } from './files'
 import { registerExportIpc } from './exports'
 import { installMenu } from './menu'
 import { registerRendererScheme, serveRenderer } from './rendererProtocol'
-import { createWindow } from './windows'
+import { createWindow, editorWindows } from './windows'
 import { registerVersionIpc } from './versions'
 
 app.setName('Tabula')
@@ -36,7 +36,7 @@ app.whenReady().then(() => {
   if (pendingOpens.length) pendingOpens.splice(0).forEach((p) => createWindow(p))
   else createWindow()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (editorWindows().length === 0) createWindow()
   })
 })
 

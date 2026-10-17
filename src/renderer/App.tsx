@@ -152,14 +152,29 @@ export const App = () => {
     [dirty],
   )
 
+  // Saves run one at a time, so an older write can never land after a newer
+  // one (a manual save racing an autosave, say).
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve())
+
   const saveTo = useCallback(
-    async (target: string) => {
-      await window.tabula.saveFile(target, serialize(target))
-      setFilePath(target)
-      markSaved()
-      return target
+    (target: string) => {
+      const run = saveQueue.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (!api) throw new Error('The editor is still starting')
+          // Hash what is written, not what is on the canvas once the write
+          // finishes: edits made in the meantime must stay unsaved.
+          const hash = hashElementsVersion(api.getSceneElementsIncludingDeleted())
+          await window.tabula.saveFile(target, serialize(target))
+          setFilePath(target)
+          savedHash.current = hash
+          setDirty(hashElementsVersion(api.getSceneElementsIncludingDeleted()) !== hash)
+          return target
+        })
+      saveQueue.current = run
+      return run
     },
-    [serialize, markSaved],
+    [api, serialize],
   )
 
   const saveAs = useCallback(async () => {

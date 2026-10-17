@@ -49,12 +49,19 @@ export const getSettings = (): Settings => {
   return cache
 }
 
+// Writes queue up in call order, so the file always ends with the newest
+// settings even when two updates land together.
+let writing: Promise<void> = Promise.resolve()
+
 /** Applies a patch, persists it, and tells every window and listener. */
 export const updateSettings = async (patch: SettingsPatch): Promise<Settings> => {
   const previous = getSettings()
   const next = coerce({ ...previous, ...patch, agent: { ...previous.agent, ...patch.agent } })
   cache = next
-  await writeFile(settingsFile(), JSON.stringify(next, null, 2), 'utf8')
+  writing = writing
+    .catch(() => undefined)
+    .then(() => writeFile(settingsFile(), JSON.stringify(next, null, 2), 'utf8'))
+  await writing
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(Channels.settingsChanged, next)
   }
