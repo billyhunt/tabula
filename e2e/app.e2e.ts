@@ -119,8 +119,15 @@ test.afterAll(async () => {
 
 test('the editor loads its bundled fonts and edits text inside a shape', async () => {
   await expect(page.getByText('Tabula rasa.')).toBeVisible()
-  await page.evaluate(() => document.fonts.ready)
-  expect(await page.evaluate(() => document.fonts.check('20px Excalifont'))).toBe(true)
+  // Excalidraw registers its font faces asynchronously after startup, so
+  // wait until the bundled Excalifont is registered and has loaded.
+  await expect
+    .poll(() =>
+      page.evaluate(async () =>
+        (await document.fonts.load('20px Excalifont', 'Tabula')).some((face) => face.status === 'loaded'),
+      ),
+    )
+    .toBe(true)
 
   // An empty spot left of the chat sidebar.
   await page.mouse.click(880, 700)
