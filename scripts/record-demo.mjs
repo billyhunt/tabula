@@ -110,6 +110,7 @@ const profile = mkdtempSync(path.join(os.tmpdir(), 'tabula-demo-'))
 const frames = []
 let recording = false
 let capture = Promise.resolve()
+let captureError = null
 let app
 try {
   app = await electron.launch({
@@ -133,13 +134,18 @@ try {
   await pause(800)
 
   recording = true
+  // A failed screenshot ends the capture; the error is kept and rethrown
+  // after cleanup, so a broken run never encodes a partial GIF.
   capture = (async () => {
     while (recording) {
       const started = Date.now()
       frames.push({ at: started, png: await page.screenshot({ scale: 'css' }) })
       await pause(Math.max(0, 110 - (Date.now() - started)))
     }
-  })()
+  })().catch((err) => {
+    captureError = err
+    recording = false
+  })
 
   await pause(700)
   await page.locator('.ask-input').click()
@@ -153,11 +159,12 @@ try {
 } finally {
   // Whatever happened, leave nothing behind: no app, no server, no profile.
   recording = false
-  await capture.catch(() => undefined)
+  await capture
   await app?.close().catch(() => undefined)
   await new Promise((resolve) => model.server.close(resolve))
   rmSync(profile, { recursive: true, force: true })
 }
+if (captureError) throw captureError
 
 // One palette for the whole GIF, from a sample of frames, keeps colours
 // steady between frames and the file small.
