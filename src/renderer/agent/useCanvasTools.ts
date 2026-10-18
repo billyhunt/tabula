@@ -170,13 +170,13 @@ const buildHandlers = (
     saveDocument: async (args) => {
       const { path } = parseToolArgs('saveDocument', BRIDGE_TOOLS.saveDocument, args)
       const doc = docRef.current
-      const target = path ?? doc.filePath
-      if (!target) {
+      if (!path && !doc.filePath) {
         throw new Error('This drawing has never been saved; give a path to save it to')
       }
       // saveTo, not save: an agent must never be left waiting on a Save
       // dialog, which save() shows for drawings with only an autosave name.
-      const saved = await doc.saveTo(target)
+      // Without a path it saves to the drawing's file as of the write.
+      const saved = await doc.saveTo(path ?? null)
       return { text: `Saved to ${saved}` }
     },
   }

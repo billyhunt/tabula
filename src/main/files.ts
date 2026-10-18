@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Channels, type OpenedFile } from '../shared/ipc'
 import type { SettingsPatch } from '../shared/settings'
@@ -51,39 +51,67 @@ const untitledFolder = () => path.join(app.getPath('documents'), 'Tabula')
  * userData so it survives restarts. This, not the file's name, is what makes
  * a path an "untitled autosave": a drawing the user saved under a name that
  * happens to look like one is theirs, and must never be deleted.
+ *
+ * Each entry also records the file's inode once Tabula first writes it, so a
+ * file that later appears at the same path (the autosave moved away, a user
+ * file put in its place) doesn't count as Tabula's.
  */
+type Registry = Map<string, number | null>
+
 const registryFile = () => path.join(app.getPath('userData'), 'untitled-drawings.json')
 
-const readRegistry = async (): Promise<Set<string>> => {
+const readRegistry = async (): Promise<Registry> => {
   try {
     const raw: unknown = JSON.parse(await readFile(registryFile(), 'utf8'))
-    return new Set(Array.isArray(raw) ? raw.filter((p): p is string => typeof p === 'string') : [])
+    const entries = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? Object.entries(raw) : []
+    return new Map(
+      entries.filter((e): e is [string, number | null] => e[1] === null || typeof e[1] === 'number'),
+    )
   } catch {
-    return new Set()
+    return new Map()
   }
 }
 
-// Read-modify-write runs one at a time, so two windows can't drop each
-// other's entries.
+// Reads and read-modify-writes run one at a time, and the file is replaced
+// in one rename, so no reader ever sees a half-written registry.
 let registryQueue: Promise<unknown> = Promise.resolve()
 
-const updateRegistry = <T>(change: (paths: Set<string>) => T): Promise<T> => {
+const withRegistry = <T>(use: (registry: Registry) => T | Promise<T>): Promise<T> => {
   const run = registryQueue
     .catch(() => undefined)
     .then(async () => {
-      const paths = await readRegistry()
-      const before = paths.size
-      const result = change(paths)
-      if (paths.size !== before) await writeFile(registryFile(), JSON.stringify([...paths], null, 2), 'utf8')
+      const registry = await readRegistry()
+      const before = JSON.stringify([...registry])
+      const result = await use(registry)
+      if (JSON.stringify([...registry]) !== before) {
+        const temp = `${registryFile()}.${process.pid}.tmp`
+        await writeFile(temp, JSON.stringify(Object.fromEntries(registry), null, 2), 'utf8')
+        await rename(temp, registryFile())
+      }
       return result
     })
   registryQueue = run
   return run
 }
 
+const inodeOf = async (filePath: string) => (await stat(filePath).catch(() => null))?.ino ?? null
+
+/**
+ * Whether the file at `filePath` is still the autosave Tabula allocated
+ * there: registered, and either not written yet or the same file it wrote.
+ */
+const ownsAutosave = async (registry: Registry, filePath: string) => {
+  if (!registry.has(filePath)) return false
+  const recorded = registry.get(filePath) ?? null
+  const current = await inodeOf(filePath)
+  return current === null ? recorded === null : current === recorded
+}
+
 /** Whether `filePath` is an autosave file Tabula allocated and still owns. */
-export const isUntitledDrawing = async (filePath: string) =>
-  path.isAbsolute(filePath) && (await readRegistry()).has(path.normalize(filePath))
+export const isUntitledDrawing = (filePath: string) =>
+  path.isAbsolute(filePath)
+    ? withRegistry((registry) => ownsAutosave(registry, path.normalize(filePath)))
+    : Promise.resolve(false)
 
 /**
  * Writes a drawing to disk. The single place drawings are written, so every
@@ -99,6 +127,11 @@ export const writeDrawing = async (filePath: string, contents: string) => {
     )
   }
   await writeFile(filePath, contents, 'utf8')
+  // An autosave's first write fixes which file it is.
+  const target = path.normalize(filePath)
+  await withRegistry(async (registry) => {
+    if (registry.has(target) && registry.get(target) === null) registry.set(target, await inodeOf(target))
+  })
 }
 
 export const registerFileIpc = () => {
@@ -128,7 +161,7 @@ export const registerFileIpc = () => {
     if (result.canceled || !result.filePath) return null
     // Chosen in a Save dialog, the file is the user's now, even if it is an
     // autosave file saved over under its own name.
-    await updateRegistry((paths) => paths.delete(path.normalize(result.filePath)))
+    await withRegistry((registry) => registry.delete(path.normalize(result.filePath)))
     app.addRecentDocument(result.filePath)
     await updateSettings({ lastSaveDir: path.dirname(result.filePath) })
     return result.filePath
@@ -136,7 +169,7 @@ export const registerFileIpc = () => {
 
   ipcMain.handle(Channels.untitledPath, async () => {
     const filePath = await untitledDrawingPath()
-    await updateRegistry((paths) => paths.add(filePath))
+    await withRegistry((registry) => registry.set(filePath, null))
     app.addRecentDocument(filePath)
     return filePath
   })
@@ -150,8 +183,13 @@ export const registerFileIpc = () => {
   ipcMain.handle(Channels.retireUntitled, async (_event, filePath: unknown) => {
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) return
     const target = path.normalize(filePath)
-    const owned = await updateRegistry((paths) => paths.delete(target))
-    if (owned) await rm(target, { force: true })
+    // Checked and removed inside the registry's queue, so nothing can claim
+    // or replace the file between the check and the delete.
+    await withRegistry(async (registry) => {
+      const owned = await ownsAutosave(registry, target)
+      registry.delete(target)
+      if (owned) await rm(target, { force: true })
+    })
   })
 
   ipcMain.on(Channels.setDirty, (event, dirty: boolean) => {

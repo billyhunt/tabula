@@ -204,12 +204,20 @@ export const App = () => {
     if (!target) return null
     const previous = pathRef.current
     const saved = await saveTo(target)
-    // Naming an untitled autosave moves it: the timestamped file it was
-    // autosaving to goes, rather than lingering as a duplicate. Saves queued
-    // from here on resolve to the new file, so none can recreate it. Main
-    // only deletes files it allocated as autosaves.
     untitledTarget.current = null
-    if (previous && previous !== saved) await window.tabula.retireUntitled(previous)
+    // Naming an untitled autosave moves it: the timestamped file it was
+    // autosaving to goes, rather than lingering as a duplicate. The removal
+    // waits its turn in the save queue, so a save already queued (to the old
+    // file by name, say) runs first; if one moved the drawing back there,
+    // the old file is in use again and stays. Main only deletes files it
+    // allocated as autosaves.
+    if (previous && previous !== saved) {
+      const retire = saveQueue.current
+        .catch(() => undefined)
+        .then(() => (pathRef.current === previous ? undefined : window.tabula.retireUntitled(previous)))
+      saveQueue.current = retire
+      await retire
+    }
     return saved
   }, [filePath, saveTo])
 
