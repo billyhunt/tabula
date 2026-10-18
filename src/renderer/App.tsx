@@ -58,6 +58,10 @@ export const App = () => {
   const theme = useSystemTheme()
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null)
   const [filePath, setFilePath] = useState<string | null>(null)
+  // The drawing's file as of now. Saves queued earlier read this when they
+  // run, not the React state from when they were queued, so an autosave can't
+  // write to a file the drawing has just moved away from.
+  const pathRef = useRef<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   // Hash of the elements as last saved or loaded; anything else is unsaved.
@@ -145,6 +149,7 @@ export const App = () => {
         return
       }
       api.history.clear()
+      pathRef.current = file.path
       setFilePath(file.path)
       markSaved()
     },
@@ -166,20 +171,25 @@ export const App = () => {
   // one (a manual save racing an autosave, say).
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve())
 
-  const saveTo = useCallback(
-    (target: string) => {
+  /** Queues a save to `target`, or with null to the drawing's own file. */
+  const queueSave = useCallback(
+    (target: string | null) => {
       const run = saveQueue.current
         .catch(() => undefined)
         .then(async () => {
           if (!api) throw new Error('The editor is still starting')
+          // The promise is shared, so saves racing to start pick the same file.
+          const file =
+            target ?? pathRef.current ?? (await (untitledTarget.current ??= window.tabula.untitledPath()))
           // Hash what is written, not what is on the canvas once the write
           // finishes: edits made in the meantime must stay unsaved.
           const hash = hashElementsVersion(api.getSceneElementsIncludingDeleted())
-          await window.tabula.saveFile(target, serialize(target))
-          setFilePath(target)
+          await window.tabula.saveFile(file, serialize(file))
+          pathRef.current = file
+          setFilePath(file)
           savedHash.current = hash
           setDirty(hashElementsVersion(api.getSceneElementsIncludingDeleted()) !== hash)
-          return target
+          return file
         })
       saveQueue.current = run
       return run
@@ -187,24 +197,27 @@ export const App = () => {
     [api, serialize],
   )
 
+  const saveTo = queueSave
+
   const saveAs = useCallback(async () => {
     const target = await window.tabula.pickSavePath(filePath ?? NEW_FILE_NAME)
     if (!target) return null
-    const previous = filePath
+    const previous = pathRef.current
     const saved = await saveTo(target)
     // Naming an untitled autosave moves it: the timestamped file it was
-    // autosaving to goes, rather than lingering as a duplicate.
-    if (previous && previous !== saved) await window.tabula.retireUntitled(previous)
+    // autosaving to goes, rather than lingering as a duplicate. Saves queued
+    // from here on resolve to the new file, so none can recreate it. Main
+    // only deletes files it allocated as autosaves.
     untitledTarget.current = null
+    if (previous && previous !== saved) await window.tabula.retireUntitled(previous)
     return saved
   }, [filePath, saveTo])
 
   // Save on a drawing that only has an autosave name asks for a real one.
-  const save = useCallback(
-    async () =>
-      filePath && !(await window.tabula.isUntitledPath(filePath)) ? saveTo(filePath) : saveAs(),
-    [filePath, saveTo, saveAs],
-  )
+  const save = useCallback(async () => {
+    const current = pathRef.current
+    return current && !(await window.tabula.isUntitledPath(current)) ? saveTo(current) : saveAs()
+  }, [saveTo, saveAs])
 
   const flush = useCallback(async () => {
     if (!api) return true
@@ -213,19 +226,17 @@ export const App = () => {
     if (!autosaveEnabled.current) return false
     // A board never saved with nothing left on it (drawn, then deleted) isn't
     // worth a file; it counts as saved.
-    if (!filePath && api.getSceneElements().length === 0) {
+    if (!pathRef.current && api.getSceneElements().length === 0) {
       savedHash.current = hashElementsVersion(api.getSceneElementsIncludingDeleted())
       setDirty(false)
       return true
     }
-    // The promise is shared, so saves racing to start pick the same file.
-    const target = filePath ?? (await (untitledTarget.current ??= window.tabula.untitledPath()))
     // Edits made while a save is writing stay unsaved; save again for those,
     // so a close never acknowledges work that isn't on disk.
-    for (let attempt = 0; attempt < 3 && unsaved(); attempt++) await saveTo(target)
+    for (let attempt = 0; attempt < 3 && unsaved(); attempt++) await queueSave(null)
     if (unsaved()) throw new Error('The drawing kept changing while it was being saved.')
     return true
-  }, [api, autosaveEnabled, filePath, saveTo])
+  }, [api, autosaveEnabled, queueSave])
 
   /** Before the canvas is replaced: save the edits, or with autosave off, ask. */
   const readyToReplace = useCallback(async () => {
@@ -252,6 +263,7 @@ export const App = () => {
       api.resetScene()
       api.updateScene({ appState: { ...BLANK_APP_STATE, openSidebar, defaultSidebarDockedPreference } })
       api.history.clear()
+      pathRef.current = null
       setFilePath(null)
       untitledTarget.current = null
       envelope.current = newEnvelope()

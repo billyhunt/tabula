@@ -11,7 +11,7 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { inflateSync } from 'node:zlib'
@@ -498,13 +498,23 @@ test('Save asks for a name for an untitled autosave, moves it there, then saves 
   await expect.poll(() => existsSync(named) && readFileSync(named, 'utf8')).toContain('Needs a name')
   await expect(page.locator('.titlebar-name')).toContainText('Named board', { ignoreCase: true })
   expect(await saveDialogCalls()).toBe(1)
-  // Moved, not copied: the timestamped autosave file is gone.
-  expect(existsSync(path.join(dir, untitled[0]))).toBe(false)
+  // Moved, not copied: the timestamped autosave file goes.
+  await expect.poll(() => existsSync(path.join(dir, untitled[0]))).toBe(false)
 
   // Named now: Save writes in place without asking again.
   await call('add_elements', { elements: [{ type: 'text', x: 0, y: 100, text: 'Saved in place' }] })
   await sendCommand('save')
   await expect.poll(() => readFileSync(named, 'utf8')).toContain('Saved in place')
+  expect(await saveDialogCalls()).toBe(1)
+
+  // A file of the user's that only looks like an autosave is theirs: Save
+  // writes it in place, and nothing deletes it.
+  const lookalike = path.join(dir, 'Untitled 2026-01-01 10.00.excalidraw.md')
+  writeFileSync(lookalike, readFileSync(named, 'utf8'))
+  await call('open_file', { path: lookalike })
+  await call('add_elements', { elements: [{ type: 'text', x: 0, y: 200, text: 'Still mine' }] })
+  await sendCommand('save')
+  await expect.poll(() => readFileSync(lookalike, 'utf8')).toContain('Still mine')
   expect(await saveDialogCalls()).toBe(1)
 })
 
