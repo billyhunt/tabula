@@ -109,6 +109,15 @@ test.beforeAll(async () => {
     if (m.type() === 'error') consoleErrors.push(m.text())
   })
   await page.waitForSelector('.excalidraw')
+  // The tests click at fixed points and expect the chat docked, which needs
+  // a window this size. CI machines have small screens, where macOS would
+  // otherwise shrink the window to fit.
+  const sizes = await app.evaluate(({ BrowserWindow, screen }) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    win.setContentSize(1280, 820)
+    return { screen: screen.getPrimaryDisplay().workAreaSize, window: win.getContentSize() }
+  })
+  console.log(`e2e window ${sizes.window.join('x')} on a ${sizes.screen.width}x${sizes.screen.height} work area`)
 })
 
 test.afterAll(async () => {
