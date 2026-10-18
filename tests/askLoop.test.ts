@@ -41,7 +41,11 @@ const options = (overrides: Partial<AskLoopOptions>): AskLoopOptions => ({
   prompt: 'Draw a box',
   model: 'claude-test',
   system: 'system',
-  tools: [],
+  // The tools the scripted model calls; the loop refuses any it wasn't offered.
+  tools: ['get_scene', 'screenshot', 'add_elements'].map((name) => ({
+    name,
+    input_schema: { type: 'object' as const },
+  })),
   turn: scripted([{ content: [text('Hi.')], stop_reason: 'end_turn' }]).turn,
   runTool: async () => ({ text: 'ok' }),
   onText: () => {},
@@ -147,6 +151,19 @@ describe('runAskLoop', () => {
       runAskLoop(options({ turn, runTool, signal: controller.signal })),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(runTool).toHaveBeenCalledTimes(1)
+  })
+
+  it("refuses a tool it didn't offer, without running it", async () => {
+    const { turn, seen } = scripted([
+      { content: [toolUse('t1', 'saveDocument', { path: '/tmp/x' })], stop_reason: 'tool_use' },
+      { content: [text('Okay.')], stop_reason: 'end_turn' },
+    ])
+    const runTool = vi.fn(async () => ({ text: 'ran' }))
+    await runAskLoop(options({ turn, runTool }))
+    expect(runTool).not.toHaveBeenCalled()
+    expect(seen[1][2].content).toEqual([
+      { type: 'tool_result', tool_use_id: 't1', content: 'Unknown tool saveDocument', is_error: true },
+    ])
   })
 
   it('replays the chat so far, then commits only this run', async () => {

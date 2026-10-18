@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron'
+import { app, dialog, ipcMain } from 'electron'
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
@@ -33,7 +33,8 @@ const LibraryFileSchema = z.object({
 })
 
 const loadLibrary = async (): Promise<unknown[] | null> => {
-  const text = await readFile(libraryFile(), 'utf8').catch(() => null)
+  // What was last saved, even if its write hasn't landed yet; else the file.
+  const text = stored ?? (await readFile(libraryFile(), 'utf8').catch(() => null))
   if (text === null) return null
   stored = text
   try {
@@ -76,6 +77,13 @@ const isAllowedLibraryUrl = (url: URL) =>
   url.protocol === 'https:' &&
   (url.hostname === 'excalidraw.com' || url.hostname.endsWith('.excalidraw.com'))
 
+/** A library link that didn't work: say so, rather than nothing happening. */
+const reportInstallProblem = (detail: string) => {
+  console.error('library install:', detail)
+  if (!app.isReady()) return
+  void dialog.showMessageBox({ type: 'warning', message: "Tabula couldn't add that library.", detail })
+}
+
 // Downloaded and waiting for a window to take them.
 const pending: LibraryInstall[] = []
 
@@ -105,25 +113,32 @@ export const handleLibraryUrl = async (link: string) => {
   try {
     libraryUrl = new URL(source)
   } catch {
-    console.error('library install: not a URL:', source)
+    reportInstallProblem(`The link didn't contain a library address: ${source}`)
     return
   }
   if (!isAllowedLibraryUrl(libraryUrl)) {
-    console.error('library install: refused', libraryUrl.href)
+    reportInstallProblem(`Libraries can only come from excalidraw.com, not ${libraryUrl.host}.`)
     return
   }
   try {
-    const response = await fetch(libraryUrl)
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const length = Number(response.headers.get('content-length') ?? 0)
-    if (length > MAX_LIBRARY_BYTES) throw new Error('library too large')
-    const json = await response.text()
-    if (json.length > MAX_LIBRARY_BYTES) throw new Error('library too large')
+    // No redirects: the allowlist only vouches for the URL it checked.
+    const response = await fetch(libraryUrl, { redirect: 'error' })
+    if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+    // Read with a cap, whatever content-length claims.
+    const chunks: Uint8Array[] = []
+    let size = 0
+    for await (const chunk of response.body) {
+      size += chunk.byteLength
+      if (size > MAX_LIBRARY_BYTES) throw new Error('library too large')
+      chunks.push(chunk)
+    }
+    const json = Buffer.concat(chunks).toString('utf8')
     LibraryFileSchema.parse(JSON.parse(json))
     pending.push({ json, token: params.get('token') })
     announceInstalls()
   } catch (err) {
-    console.error(`library install from ${libraryUrl.href} failed:`, err)
+    const reason = err instanceof Error ? err.message : String(err)
+    reportInstallProblem(`Downloading ${libraryUrl.href} failed: ${reason}`)
   }
 }
 

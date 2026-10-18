@@ -6,6 +6,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "dist-electron/main.js",
   "scripts": {
     "postinstall": "node scripts/copy-fonts.mjs && node scripts/brand-dev-electron.mjs",

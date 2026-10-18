@@ -53,7 +53,8 @@ let writing: Promise<void> = Promise.resolve()
 
 /** Saves the key for `provider`, or removes it when `key` is null. */
 export const saveKey = async (provider: Provider, key: string | null): Promise<void> => {
-  const next = { ...load() }
+  const previous = load()
+  const next = { ...previous }
   if (key === null) {
     delete next[provider]
   } else {
@@ -70,5 +71,11 @@ export const saveKey = async (provider: Provider, key: string | null): Promise<v
       // mode only applies when the file is created; make sure of it on replace.
       await chmod(keysFile(), 0o600)
     })
-  await writing
+  try {
+    await writing
+  } catch (err) {
+    // Not on disk, so not saved: go back unless a later save replaced it.
+    if (stored === next) stored = previous
+    throw err
+  }
 }

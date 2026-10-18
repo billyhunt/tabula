@@ -175,7 +175,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, port: nu
 
   // Stateless mode needs a fresh server and transport per request. The
   // low-level Server (not McpServer) leaves argument validation to us, so
-  // agents get the same one-sentence errors as in the Ask bar.
+  // agents get the same one-sentence errors as in the chat.
   const server = new Server(
     { name: 'tabula', version: app.getVersion() },
     { capabilities: { tools: {} }, instructions: INSTRUCTIONS },

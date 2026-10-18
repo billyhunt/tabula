@@ -1,6 +1,6 @@
 /**
  * The canvas tools agents use. One list feeds both the MCP server (external
- * agents such as Claude Code) and the Ask bar (Claude inside the app), so the
+ * agents such as Claude Code) and the chat (Claude inside the app), so the
  * two always offer the same abilities.
  *
  * Each tool runs in the renderer against the live Excalidraw scene; main

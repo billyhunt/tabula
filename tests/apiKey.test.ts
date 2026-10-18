@@ -67,19 +67,24 @@ describe('clientOptions', () => {
     return { url, headers: new Headers(init.headers) }
   }
 
-  it('sends OpenRouter keys to OpenRouter as a bearer token, never an Anthropic key', async () => {
+  it('sends OpenRouter keys to OpenRouter as a bearer token, never Anthropic credentials or headers', async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-from-env')
     vi.stubEnv('ANTHROPIC_BASE_URL', 'http://127.0.0.1:1')
-    const { url, headers } = await firstRequest(clientOptions('openrouter', 'sk-or-v1-key'))
+    vi.stubEnv('ANTHROPIC_CUSTOM_HEADERS', 'x-gateway-key: secret\nx-team: design')
+    const { url, headers } = await firstRequest(
+      clientOptions('openrouter', 'sk-or-v1-key', process.env),
+    )
     expect(url).toBe('https://openrouter.ai/api/v1/messages')
     expect(headers.get('authorization')).toBe('Bearer sk-or-v1-key')
     expect(headers.get('x-api-key')).toBeNull()
+    expect(headers.get('x-gateway-key')).toBeNull()
+    expect(headers.get('x-team')).toBeNull()
   })
 
   it('sends Anthropic keys as x-api-key, without a stray bearer token', async () => {
     vi.stubEnv('ANTHROPIC_AUTH_TOKEN', 'token-from-env')
     vi.stubEnv('ANTHROPIC_BASE_URL', '')
-    const { url, headers } = await firstRequest(clientOptions('anthropic', 'sk-ant-key'))
+    const { url, headers } = await firstRequest(clientOptions('anthropic', 'sk-ant-key', process.env))
     expect(url).toBe('https://api.anthropic.com/v1/messages')
     expect(headers.get('x-api-key')).toBe('sk-ant-key')
     expect(headers.get('authorization')).toBeNull()

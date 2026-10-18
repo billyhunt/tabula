@@ -174,10 +174,15 @@ export const useChat = (
     const text = prompt.trim()
     if (!text || running) return
     // No key yet: Settings opens at the key field. The message stays in the
-    // box, ready to send once the key is in.
-    if (status && !status.keyConfigured) {
-      onOpenSettings({ askForKey: true })
-      return
+    // box, ready to send once the key is in. Saving a key isn't a settings
+    // change, so look again before sending the user back.
+    if (!status?.keyConfigured) {
+      const latest = await window.tabula.agent.status().catch(() => null)
+      if (latest) setStatus(latest)
+      if (latest && !latest.keyConfigured) {
+        onOpenSettings({ askForKey: true })
+        return
+      }
     }
     setPrompt('')
     setRuns((r) => [...r, { prompt: text, steps: [], state: 'running' }])

@@ -22,10 +22,10 @@ import { hasSavedKey, readSavedKey } from './keyStore'
 export const anthropicClient = () => {
   const { provider } = getSettings().agent
   const { key } = resolveApiKey(provider, process.env, () => readSavedKey(provider))
-  return new Anthropic({ ...clientOptions(provider, key), maxRetries: 2 })
+  return new Anthropic({ ...clientOptions(provider, key, process.env), maxRetries: 2 })
 }
 
-/** Key status for Settings and the Ask bar, without decrypting anything. */
+/** Key status for Settings and the chat, without decrypting anything. */
 export const keyStatus = (): Pick<AgentStatus, 'provider' | 'keys' | 'keyConfigured'> => {
   const { provider } = getSettings().agent
   const keys = Object.fromEntries(
