@@ -82,7 +82,7 @@ const buildHandlers = (
       if (!asPicture && elements.every((e) => e.type === 'image')) {
         throw new Error(
           'This Mermaid diagram type can only come in as a single uneditable picture. ' +
-            'Rewrite it as a flowchart (or a sequence or class diagram) to get editable shapes, ' +
+            'Rewrite it as a flowchart to get editable shapes, ' +
             'or pass asPicture: true to place the picture anyway.',
         )
       }

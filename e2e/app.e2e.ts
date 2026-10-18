@@ -237,7 +237,7 @@ test('an agent draws, exports every format, and saves over MCP', async () => {
   // reason, so the agent rewrites it instead of hand-placing everything.
   const before = (await sceneJson()).elements.length
   await expect(
-    call('import_mermaid', { mermaid: 'erDiagram\n  CUSTOMER ||--o{ ORDER : places' }),
+    call('import_mermaid', { mermaid: 'gantt\n  title Launch\n  section Build\n  Code :a1, 2026-10-01, 3d' }),
   ).rejects.toThrow('Rewrite it as a flowchart')
   expect((await sceneJson()).elements).toHaveLength(before)
 
