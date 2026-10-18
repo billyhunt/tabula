@@ -34,7 +34,12 @@ const LibraryFileSchema = z.object({
 
 const loadLibrary = async (): Promise<unknown[] | null> => {
   // What was last saved, even if its write hasn't landed yet; else the file.
-  const text = stored ?? (await readFile(libraryFile(), 'utf8').catch(() => null))
+  // A save that lands while the file is being read wins over what was read.
+  let text = stored
+  if (text === null) {
+    const disk = await readFile(libraryFile(), 'utf8').catch(() => null)
+    text = stored ?? disk
+  }
   if (text === null) return null
   stored = text
   try {
@@ -80,8 +85,11 @@ const isAllowedLibraryUrl = (url: URL) =>
 /** A library link that didn't work: say so, rather than nothing happening. */
 const reportInstallProblem = (detail: string) => {
   console.error('library install:', detail)
-  if (!app.isReady()) return
-  void dialog.showMessageBox({ type: 'warning', message: "Tabula couldn't add that library.", detail })
+  const show = () =>
+    void dialog.showMessageBox({ type: 'warning', message: "Tabula couldn't add that library.", detail })
+  // A link that launched the app arrives before it is ready to show anything.
+  if (app.isReady()) show()
+  else void app.whenReady().then(show)
 }
 
 // Downloaded and waiting for a window to take them.
