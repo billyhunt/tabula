@@ -1,5 +1,12 @@
 # Tabula app icon: requirements
 
+> **Outcome (2026-10-17):** the shipped icon (`build/icon.svg`, `.png`,
+> `.icns`) is a hot-orange lowercase Greek tau inside a hot-orange inset frame
+> on an ink tile. It departs from the Roman-T recommendation below: it keeps
+> Alethia's Greek-letter mark and tells the two apps apart by reversing the
+> colours (Alethia is an ink mark on orange). The frame geometry and
+> three-colour palette follow the family rules.
+
 ## What it has to say
 
 Tabula is a whiteboard for macOS. The name is the Roman wax tablet, and
