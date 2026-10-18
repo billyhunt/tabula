@@ -77,6 +77,13 @@
 
 /* ── Chat ────────────────────────────────────────────────────────────────── */
 
+/* Excalidraw's tab container is a flex item that otherwise grows to fit its
+   content, so a long conversation pushed the message box out of the window
+   and the log never got a scrollbar. Bounding it lets the log scroll. */
+.excalidraw .sidebar-tabs-root {
+  min-height: 0;
+}
+
 /* A tab of Excalidraw's sidebar: the conversation fills it, the box sits at the foot. */
 .excalidraw .chat-tab {
   display: flex;
@@ -111,6 +118,18 @@
   overflow-y: auto;
   font-size: 0.92rem;
   line-height: 1.45;
+}
+
+/* Excalidraw turns off text selection across its UI; the conversation is
+   text to read, quote and copy. Buttons inside stay unselectable. */
+.excalidraw .chat-log {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.excalidraw .chat-log button {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .chat-empty {
@@ -156,9 +175,14 @@
   cursor: default;
 }
 
-.chat-new {
+.chat-actions {
   float: right;
+  display: flex;
+  gap: 0.8rem;
   margin: 0 0 0.4rem 0.8rem;
+}
+
+.chat-new {
   padding: 0;
   border: 0;
   background: none;

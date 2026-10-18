@@ -26,6 +26,8 @@ const api: TabulaApi = {
   saveFile: (path, contents) => ipcRenderer.invoke(Channels.saveFile, path, contents),
   pickSavePath: (suggestedName) => ipcRenderer.invoke(Channels.pickSavePath, suggestedName),
   untitledPath: () => ipcRenderer.invoke(Channels.untitledPath),
+  isUntitledPath: (path) => ipcRenderer.invoke(Channels.isUntitledPath, path),
+  retireUntitled: (path) => ipcRenderer.invoke(Channels.retireUntitled, path),
   onFlushRequest: (handler) =>
     listen<void>(Channels.flushRequest, () => {
       void handler().then(
