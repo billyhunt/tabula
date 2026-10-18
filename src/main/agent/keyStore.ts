@@ -69,7 +69,10 @@ export const saveKey = async (provider: Provider, key: string | null): Promise<v
     .then(async () => {
       await writeFile(keysFile(), JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 })
       // mode only applies when the file is created; make sure of it on replace.
-      await chmod(keysFile(), 0o600)
+      // The key is written by now, so a failure here isn't a failed save.
+      await chmod(keysFile(), 0o600).catch((err: unknown) =>
+        console.error('could not restrict api-keys.json:', err),
+      )
     })
   try {
     await writing
