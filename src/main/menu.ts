@@ -86,6 +86,13 @@ const buildMenu = () => {
     {
       label: 'View',
       submenu: [
+        {
+          label: 'Show Chat',
+          type: 'checkbox',
+          checked: settings.showChat,
+          click: (item) => void updateSettings({ showChat: item.checked }),
+        },
+        { type: 'separator' },
         { role: 'reload', accelerator: '' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
@@ -95,8 +102,8 @@ const buildMenu = () => {
     {
       label: 'Agent',
       submenu: [
-        // ⌘K is Excalidraw's link shortcut, so the Ask bar takes ⌘J.
-        command('ask', 'Ask…', 'CmdOrCtrl+J'),
+        // ⌘K is Excalidraw's link shortcut, so the chat takes ⌘J.
+        command('ask', 'Chat', 'CmdOrCtrl+J'),
         command('text-to-diagram', 'Text to Diagram…'),
         { type: 'separator' },
         {

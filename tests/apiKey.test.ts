@@ -1,106 +1,87 @@
-import { describe, expect, it, vi } from 'vitest'
+import Anthropic from '@anthropic-ai/sdk'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiKeyError,
-  NO_KEY_MESSAGE,
-  NO_OP_MESSAGE,
-  cleanOpError,
+  clientOptions,
   keySource,
+  noKeyMessage,
   resolveApiKey,
-  type KeyDeps,
 } from '../src/main/agent/apiKey'
-
-const REF = 'op://Private/Anthropic/credential'
-
-const deps = (overrides: Partial<KeyDeps> = {}): KeyDeps => ({
-  env: {},
-  apiKeyRef: REF,
-  isExecutable: async (file) => file === '/opt/homebrew/bin/op',
-  execFile: async () => ({ stdout: 'sk-ant-from-1password\n' }),
-  ...overrides,
-})
+import { keyProblem } from '../src/shared/providers'
 
 describe('resolveApiKey', () => {
-  it('prefers ANTHROPIC_API_KEY and never runs op', async () => {
-    const execFile = vi.fn()
-    const result = await resolveApiKey(
-      deps({ env: { ANTHROPIC_API_KEY: ' sk-ant-env ' }, execFile }),
-    )
-    expect(result).toEqual({ key: 'sk-ant-env', source: 'env' })
-    expect(execFile).not.toHaveBeenCalled()
-  })
-
-  it('reads the 1Password reference with op read, without a shell', async () => {
-    const execFile = vi.fn(async () => ({ stdout: 'sk-ant-from-1password\n' }))
-    const result = await resolveApiKey(deps({ execFile }))
-    expect(result).toEqual({ key: 'sk-ant-from-1password', source: '1password' })
-    expect(execFile).toHaveBeenCalledWith('/opt/homebrew/bin/op', ['read', REF])
-  })
-
-  it('finds op on PATH when it is not in a Homebrew location', async () => {
-    const execFile = vi.fn(async () => ({ stdout: 'k' }))
-    await resolveApiKey(
-      deps({
-        env: { PATH: '/usr/bin:/Users/me/bin/' },
-        isExecutable: async (file) => file === '/Users/me/bin/op',
-        execFile,
-      }),
-    )
-    expect(execFile).toHaveBeenCalledWith('/Users/me/bin/op', ['read', REF])
-  })
-
-  it('tells the user to set a reference when nothing is configured', async () => {
-    const pending = resolveApiKey(deps({ apiKeyRef: null }))
-    await expect(pending).rejects.toBeInstanceOf(ApiKeyError)
-    await expect(pending).rejects.toThrow(NO_KEY_MESSAGE)
-    expect(NO_KEY_MESSAGE).toMatch(/Settings/)
-  })
-
-  it('says when the op CLI is missing', async () => {
-    await expect(resolveApiKey(deps({ isExecutable: async () => false }))).rejects.toThrow(
-      NO_OP_MESSAGE,
-    )
-  })
-
-  it("passes on op's stderr, without timestamps or anything key-shaped", async () => {
-    const failure = Object.assign(new Error('Command failed'), {
-      stderr:
-        '[ERROR] 2026/10/17 09:12:44 could not read secret op://Private/Anthropic/credential: ' +
-        'item has value sk-ant-api03-SECRET_value-1\n',
+  it("prefers the provider's environment variable and never decrypts the saved key", () => {
+    const readSaved = vi.fn(() => 'sk-ant-saved')
+    expect(resolveApiKey('anthropic', { ANTHROPIC_API_KEY: ' sk-ant-env ' }, readSaved)).toEqual({
+      key: 'sk-ant-env',
+      source: 'env',
     })
-    const error = await resolveApiKey(
-      deps({
-        execFile: async () => {
-          throw failure
-        },
-      }),
-    ).catch((err: unknown) => err)
-    if (!(error instanceof ApiKeyError)) throw new Error(`expected an ApiKeyError, got ${error}`)
-    const message = error.message
-    expect(message).toContain(`1Password couldn't read ${REF}: could not read secret`)
-    expect(message).not.toContain('SECRET')
-    expect(message).not.toContain('2026/10/17')
+    expect(readSaved).not.toHaveBeenCalled()
   })
 
-  it('rejects an empty secret', async () => {
-    await expect(resolveApiKey(deps({ execFile: async () => ({ stdout: '\n' }) }))).rejects.toThrow(
-      /empty value/,
+  it("ignores another provider's environment variable", () => {
+    const result = resolveApiKey('openrouter', { ANTHROPIC_API_KEY: 'sk-ant-env' }, () => 'sk-or-saved')
+    expect(result).toEqual({ key: 'sk-or-saved', source: 'saved' })
+  })
+
+  it('treats a blank environment variable as unset', () => {
+    expect(resolveApiKey('openrouter', { OPENROUTER_API_KEY: '  ' }, () => 'sk-or-saved').source).toBe(
+      'saved',
     )
+  })
+
+  it('says how to add a key when there is none', () => {
+    expect(() => resolveApiKey('openrouter', {}, () => null)).toThrow(ApiKeyError)
+    expect(() => resolveApiKey('openrouter', {}, () => null)).toThrow(noKeyMessage('openrouter'))
+    expect(noKeyMessage('openrouter')).toMatch(/OpenRouter.*Settings.*OPENROUTER_API_KEY/)
   })
 })
 
 describe('keySource', () => {
-  it('reports the source without reading anything', () => {
-    expect(keySource({ ANTHROPIC_API_KEY: 'x' }, REF)).toBe('env')
-    expect(keySource({ ANTHROPIC_API_KEY: '  ' }, REF)).toBe('1password')
-    expect(keySource({}, null)).toBeNull()
+  it('reports where the key would come from', () => {
+    expect(keySource('anthropic', { ANTHROPIC_API_KEY: 'x' }, true)).toBe('env')
+    expect(keySource('anthropic', {}, true)).toBe('saved')
+    expect(keySource('openrouter', { ANTHROPIC_API_KEY: 'x' }, false)).toBeNull()
   })
 })
 
-describe('cleanOpError', () => {
-  it('keeps the message readable and short', () => {
-    expect(cleanOpError('[ERROR] 2026/01/02 03:04:05 You are not signed in.\n')).toBe(
-      'You are not signed in.',
-    )
-    expect(cleanOpError('x'.repeat(1000))).toHaveLength(300)
+describe('keyProblem', () => {
+  it("catches a key pasted under the wrong provider, or one that isn't a key", () => {
+    expect(keyProblem('anthropic', 'sk-ant-api03-abc')).toBeNull()
+    expect(keyProblem('openrouter', 'sk-or-v1-abc')).toBeNull()
+    expect(keyProblem('openrouter', 'sk-ant-api03-abc')).toMatch(/sk-or-/)
+    expect(keyProblem('anthropic', 'sk-ant-api03 abc')).toMatch(/spaces/)
+  })
+})
+
+describe('clientOptions', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  const firstRequest = async (options: ConstructorParameters<typeof Anthropic>[0]) => {
+    const fetch = vi.fn(async () => new Response('{}', { status: 500 }))
+    const client = new Anthropic({ ...options, fetch, maxRetries: 0 })
+    await client.messages
+      .create({ model: 'm', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] })
+      .catch(() => undefined)
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
+    return { url, headers: new Headers(init.headers) }
+  }
+
+  it('sends OpenRouter keys to OpenRouter as a bearer token, never an Anthropic key', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-from-env')
+    vi.stubEnv('ANTHROPIC_BASE_URL', 'http://127.0.0.1:1')
+    const { url, headers } = await firstRequest(clientOptions('openrouter', 'sk-or-v1-key'))
+    expect(url).toBe('https://openrouter.ai/api/v1/messages')
+    expect(headers.get('authorization')).toBe('Bearer sk-or-v1-key')
+    expect(headers.get('x-api-key')).toBeNull()
+  })
+
+  it('sends Anthropic keys as x-api-key, without a stray bearer token', async () => {
+    vi.stubEnv('ANTHROPIC_AUTH_TOKEN', 'token-from-env')
+    vi.stubEnv('ANTHROPIC_BASE_URL', '')
+    const { url, headers } = await firstRequest(clientOptions('anthropic', 'sk-ant-key'))
+    expect(url).toBe('https://api.anthropic.com/v1/messages')
+    expect(headers.get('x-api-key')).toBe('sk-ant-key')
+    expect(headers.get('authorization')).toBeNull()
   })
 })

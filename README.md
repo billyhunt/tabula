@@ -35,30 +35,55 @@ Working now:
 - The full Excalidraw editor, with excalidraw.com's tools and shortcuts
 - Open and save `.excalidraw.md` (Obsidian Excalidraw plugin) and `.excalidraw`
 - Light and dark mode, following macOS
-- Works offline: all fonts are bundled
+- Works offline: all fonts are bundled. New text, including text that Ask,
+  agents and Mermaid import add, is in Comic Shanns rather than Excalidraw's
+  hand-drawn Excalifont
 - Export to PNG, SVG, PDF (one page per frame, if you like) and Mermaid, or
   copy as PNG, SVG or Mermaid; exports cover the selection when there is one
 - Mermaid import: File ▸ Import Mermaid…, or paste a Mermaid diagram onto the
   canvas (⇧⌘V pastes it as text)
 - A built-in MCP server, so AI agents such as Claude Code can draw on the open
   board (see [Connecting an agent](#connecting-an-agent))
-- **Ask** (⌘J): tell Claude what to draw or change, and watch it work on the
-  board. With a selection it works on just that ("tidy this up", "turn these
-  notes into a flowchart"). Each change is one undo step.
+- **Chat**: the first tab of the sidebar, beside search and the library,
+  docked to the right and open by default (the top-right button and ⌘J open
+  it; View ▸ Show Chat turns it off). Tell Claude what to draw
+  or change and watch it work on the board, then follow up ("make it bigger",
+  "now connect those"): it remembers the conversation until **New chat**.
+  With a selection it works on just that ("tidy this up", "turn these notes
+  into a flowchart"). Each change is one undo step. The model button beside
+  the box switches between the models you picked in Settings.
+- **Library**: shapes you add to Excalidraw's library are kept (in Tabula's
+  app data) for every window and across restarts. "Browse libraries" opens
+  libraries.excalidraw.com, and its **Add to Excalidraw** button hands the
+  library back to Tabula through a `tabula://` link; Tabula downloads it
+  (only from excalidraw.com hosts) and asks before adding it
 - **Text to diagram** (Agent ▸ Text to Diagram…): describe a diagram, preview
   the Mermaid Claude writes, then insert it
-- Autosave for drawings that have a file, and a version history (File ▸
-  Browse Versions…) that keeps what every save replaced, with a preview and
-  restore
+- Autosave for everything: a drawing is saved a moment after you stop
+  editing and again before its window closes or the app quits. One that
+  was never saved gets its own file, `Documents/Tabula/Untitled <date>
+  <time>.excalidraw.md`, with no dialog; Save As moves it wherever you like
+  (the autosaved copy stays where it was). New and Open save the current
+  drawing instead of asking, and so do agents' new and open commands. A
+  version history (File ▸ Browse Versions…) keeps what every save replaced,
+  with a preview and restore
 
-## Claude
+## AI settings
 
-Ask and Text to diagram call the Anthropic API with your own key. Tabula
-never stores the key: in **Settings** (⌘,), give a 1Password secret reference
-such as `op://Private/Anthropic/credential`, and Tabula reads it with the
-1Password CLI (`op`) the first time you ask. `ANTHROPIC_API_KEY` in the
-environment takes precedence. The model is configurable there too; the
-default is `claude-sonnet-5-5`.
+The chat and Text to diagram call a model with your own key, from Anthropic
+or [OpenRouter](https://openrouter.ai). The first message you send without a
+key opens **Settings** (⌘,) at the key field. Pick the provider and paste its
+API key. Tabula encrypts the key with a secret held in your macOS Keychain
+(Electron `safeStorage`) and stores it in its own app data folder; the key
+never leaves the app's main process. `ANTHROPIC_API_KEY` or
+`OPENROUTER_API_KEY` in the environment takes precedence over a saved key.
+
+**Models in the chat** lists the provider's models (Anthropic's need the key
+first; OpenRouter's are cut to those that can use tools, which the chat
+needs). The ones you tick appear in the chat's model menu. Each provider keeps
+its own list and choice; the defaults are `claude-sonnet-5-5` on Anthropic
+and `anthropic/claude-sonnet-5.5` on OpenRouter. OpenRouter is called through
+its Anthropic-compatible Messages API.
 
 ## Running it
 
@@ -72,8 +97,13 @@ npm run dev
 ```bash
 npm test          # unit tests
 npm run test:e2e  # builds, then drives the app with Playwright
-npm run package   # unsigned Apple-silicon .app in release/mac-arm64/
+npm run package   # unsigned Apple-silicon .app in release/mac-arm64/, then opens it
+npm run open      # opens the newest packaged build, quitting any older copy
 ```
+
+`npm run open` picks whichever of `release/` and `release-next/` (test
+builds) was built last. Any other running copy is quit first, which saves
+its unsaved drawings, so the app in the Dock is always the newest build.
 
 The end-to-end run uses a throwaway profile and a fake Anthropic API, so it
 needs no key. Set `TABULA_E2E_APP` to a packaged app's binary to run it
@@ -90,7 +120,7 @@ claude mcp add --transport http tabula http://127.0.0.1:7337/mcp --header "Autho
 
 The server listens on 127.0.0.1 only, needs that token (kept in Tabula's
 app-support folder; Settings can replace it), and refuses requests from web
-pages. Agents get the same tools as the Ask bar — read the drawing, add,
+pages. Agents get the same tools as Ask — read the drawing, add,
 change and delete elements, import Mermaid, select, zoom, screenshot — plus
 export, open, save and new drawing. Every change is one undo step.
 
@@ -116,15 +146,15 @@ To edit the same drawings in Obsidian, install the Excalidraw plugin there.
 | Directory | Runs in | Purpose |
 |---|---|---|
 | `src/main/` | Electron main | Window, menus, file dialogs, file I/O, version history, PDF printing |
-| `src/main/agent/` | Electron main | MCP server, Claude calls (Ask, Text to diagram), API key lookup |
+| `src/main/agent/` | Electron main | MCP server, model calls and chat history (Ask, Text to diagram), API keys |
 | `src/preload/` | Preload (sandboxed) | The only bridge between page and main |
 | `src/renderer/` | Chromium | React shell around the Excalidraw editor |
-| `src/renderer/agent/` | Chromium | Canvas tools agents call, Ask bar, Settings |
+| `src/renderer/agent/` | Chromium | Canvas tools agents call, Ask chat, Settings |
 | `src/renderer/export/`, `mermaid/` | Chromium | Exports, Mermaid writer and import |
 | `src/renderer/format/` | Chromium | `.excalidraw.md` reader and writer |
 | `src/shared/` | Both | IPC channels and types, the canvas tool schemas |
 
-The scene lives in the page, so both the MCP server and the Ask bar reach it
+The scene lives in the page, so both the MCP server and Ask reach it
 the same way: main validates a tool call and forwards it to the window, which
 runs it against the editor. Paths and file writes stay in main. The packaged
 app serves the page from an `app://tabula/` origin rather than `file://`, so
@@ -132,7 +162,9 @@ the strict content security policy can allow the bundled fonts.
 
 Excalidraw is used as a library, unmodified. It is pinned to an exact build
 of the npm `next` channel, which is what excalidraw.com runs; the `latest`
-release still uses number keys for tools.
+release still uses number keys for tools. The one seam: `vite.config.ts`
+aliases `@excalidraw/mermaid-to-excalidraw` to a wrapper that sets the font
+on converted text, because Excalidraw's Mermaid dialogs have no hook for it.
 
 ## License
 

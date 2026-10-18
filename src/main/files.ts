@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Channels, type OpenedFile } from '../shared/ipc'
 import type { SettingsPatch } from '../shared/settings'
@@ -19,6 +19,29 @@ export const saveDialogPath = (suggestedName: string): string => {
   if (path.isAbsolute(suggestedName)) return suggestedName
   const dir = getSettings().lastSaveDir
   return path.join(dir && existsSync(dir) ? dir : app.getPath('documents'), suggestedName)
+}
+
+// Paths handed out but maybe not written yet, so two windows starting in the
+// same minute never get the same file.
+const handedOut = new Set<string>()
+
+/**
+ * Where autosave puts a drawing that was never saved: a new file in
+ * Documents/Tabula named for when it was started, never one in use.
+ */
+export const untitledDrawingPath = async (now = new Date()): Promise<string> => {
+  const dir = path.join(app.getPath('documents'), 'Tabula')
+  await mkdir(dir, { recursive: true })
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const stamp =
+    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+    `${pad(now.getHours())}.${pad(now.getMinutes())}`
+  for (let n = 1; ; n++) {
+    const candidate = path.join(dir, `Untitled ${stamp}${n > 1 ? ` ${n}` : ''}.excalidraw.md`)
+    if (existsSync(candidate) || handedOut.has(candidate)) continue
+    handedOut.add(candidate)
+    return candidate
+  }
 }
 
 /**
@@ -62,6 +85,12 @@ export const registerFileIpc = () => {
     app.addRecentDocument(result.filePath)
     await updateSettings({ lastSaveDir: path.dirname(result.filePath) })
     return result.filePath
+  })
+
+  ipcMain.handle(Channels.untitledPath, async () => {
+    const filePath = await untitledDrawingPath()
+    app.addRecentDocument(filePath)
+    return filePath
   })
 
   ipcMain.on(Channels.setDirty, (event, dirty: boolean) => {

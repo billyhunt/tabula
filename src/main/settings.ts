@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Channels } from '../shared/ipc'
+import { isProvider, PROVIDERS, type Provider } from '../shared/providers'
 import { DEFAULT_SETTINGS, type Settings, type SettingsPatch } from '../shared/settings'
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json')
@@ -13,11 +14,33 @@ const coerce = (raw: unknown): Settings => {
   const agent = (
     typeof input.agent === 'object' && input.agent !== null ? input.agent : {}
   ) as Record<string, unknown>
+  const models = (
+    typeof agent.models === 'object' && agent.models !== null ? agent.models : {}
+  ) as Record<string, unknown>
+  const enabledModels = (
+    typeof agent.enabledModels === 'object' && agent.enabledModels !== null
+      ? agent.enabledModels
+      : {}
+  ) as Record<string, unknown>
   const d = DEFAULT_SETTINGS
   const port = agent.mcpPort
+  const model = (provider: Provider) => {
+    const value = models[provider]
+    return typeof value === 'string' && value.trim() ? value.trim() : d.agent.models[provider]
+  }
+  // The chat's model menu: the stored list in its order, cleaned up, with the
+  // model in use added at the top if it is missing.
+  const enabled = (provider: Provider) => {
+    const value = enabledModels[provider]
+    const ids = Array.isArray(value)
+      ? value.filter((id): id is string => typeof id === 'string' && id.trim() !== '').map((id) => id.trim())
+      : d.agent.enabledModels[provider]
+    return [...new Set(ids.includes(model(provider)) ? ids : [model(provider), ...ids])]
+  }
   return {
     lastSaveDir: typeof input.lastSaveDir === 'string' ? input.lastSaveDir : d.lastSaveDir,
     autosave: typeof input.autosave === 'boolean' ? input.autosave : d.autosave,
+    showChat: typeof input.showChat === 'boolean' ? input.showChat : d.showChat,
     agent: {
       mcpEnabled:
         typeof agent.mcpEnabled === 'boolean' ? agent.mcpEnabled : d.agent.mcpEnabled,
@@ -25,11 +48,12 @@ const coerce = (raw: unknown): Settings => {
         typeof port === 'number' && Number.isInteger(port) && port > 1023 && port < 65536
           ? port
           : d.agent.mcpPort,
-      model: typeof agent.model === 'string' && agent.model ? agent.model : d.agent.model,
-      apiKeyRef:
-        typeof agent.apiKeyRef === 'string' && agent.apiKeyRef.startsWith('op://')
-          ? agent.apiKeyRef
-          : d.agent.apiKeyRef,
+      provider: isProvider(agent.provider) ? agent.provider : d.agent.provider,
+      models: Object.fromEntries(PROVIDERS.map((p) => [p, model(p)])) as Record<Provider, string>,
+      enabledModels: Object.fromEntries(PROVIDERS.map((p) => [p, enabled(p)])) as Record<
+        Provider,
+        string[]
+      >,
     },
   }
 }
@@ -56,7 +80,16 @@ let writing: Promise<void> = Promise.resolve()
 /** Applies a patch, persists it, and tells every window and listener. */
 export const updateSettings = async (patch: SettingsPatch): Promise<Settings> => {
   const previous = getSettings()
-  const next = coerce({ ...previous, ...patch, agent: { ...previous.agent, ...patch.agent } })
+  const next = coerce({
+    ...previous,
+    ...patch,
+    agent: {
+      ...previous.agent,
+      ...patch.agent,
+      models: { ...previous.agent.models, ...patch.agent?.models },
+      enabledModels: { ...previous.agent.enabledModels, ...patch.agent?.enabledModels },
+    },
+  })
   cache = next
   writing = writing
     .catch(() => undefined)

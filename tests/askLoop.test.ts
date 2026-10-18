@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import {
   TurnLimitError,
+  compactHistory,
   runAskLoop,
   toolDefinitions,
   type AskLoopOptions,
@@ -146,6 +147,105 @@ describe('runAskLoop', () => {
       runAskLoop(options({ turn, runTool, signal: controller.signal })),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(runTool).toHaveBeenCalledTimes(1)
+  })
+
+  it('replays the chat so far, then commits only this run', async () => {
+    const history: Anthropic.MessageParam[] = [
+      { role: 'user', content: 'Draw a box' },
+      { role: 'assistant', content: 'Added a box.' },
+    ]
+    const { turn, seen } = scripted([{ content: [text('Made it red.')], stop_reason: 'end_turn' }])
+    const commits: Anthropic.MessageParam[][] = []
+    await runAskLoop(
+      options({ prompt: 'Make it red', history, turn, onCommit: (m) => commits.push(m) }),
+    )
+    expect(seen[0]).toEqual([...history, { role: 'user', content: 'Make it red' }])
+    expect(commits.at(-1)).toEqual([
+      { role: 'user', content: 'Make it red' },
+      { role: 'assistant', content: [text('Made it red.')] },
+    ])
+  })
+
+  it('answers every call when stopped between tools, so the chat can carry on', async () => {
+    const controller = new AbortController()
+    const { turn } = scripted([
+      {
+        content: [toolUse('t1', 'add_elements', {}), toolUse('t2', 'add_elements', {})],
+        stop_reason: 'tool_use',
+      },
+    ])
+    const commits: Anthropic.MessageParam[][] = []
+    await expect(
+      runAskLoop(
+        options({
+          turn,
+          runTool: async () => {
+            controller.abort()
+            return { text: 'Added 1 element' }
+          },
+          onCommit: (m) => commits.push(m),
+          signal: controller.signal,
+        }),
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    const last = commits.at(-1)
+    expect(last?.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+    expect(last?.[2].content).toEqual([
+      { type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'Added 1 element' }] },
+      {
+        type: 'tool_result',
+        tool_use_id: 't2',
+        content: 'Not run: the user stopped this request.',
+        is_error: true,
+      },
+    ])
+  })
+
+  it('drops an unanswerable call from a reply cut off at max_tokens', async () => {
+    const { turn } = scripted([
+      { content: [text('Adding'), toolUse('t1', 'add_elements', {})], stop_reason: 'max_tokens' },
+    ])
+    const commits: Anthropic.MessageParam[][] = []
+    await runAskLoop(options({ turn, onCommit: (m) => commits.push(m) }))
+    expect(commits.at(-1)?.[1]).toEqual({ role: 'assistant', content: [text('Adding')] })
+  })
+})
+
+describe('compactHistory', () => {
+  const run = (prompt: string, reply: string): Anthropic.MessageParam[] => [
+    { role: 'user', content: prompt },
+    { role: 'assistant', content: reply },
+  ]
+
+  it('replaces screenshots the model has seen with a placeholder', () => {
+    const withShot: Anthropic.MessageParam[] = [
+      { role: 'user', content: 'Check it' },
+      { role: 'assistant', content: [toolUse('t1', 'screenshot', {})] },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 't1',
+            content: [
+              { type: 'text', text: 'Took a screenshot' },
+              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0K' } },
+            ],
+          },
+        ],
+      },
+      { role: 'assistant', content: 'Looks fine.' },
+    ]
+    const [compacted] = compactHistory([withShot], 1_000_000)
+    expect(JSON.stringify(compacted)).not.toContain('iVBORw0K')
+    expect(JSON.stringify(compacted)).toContain('Screenshot omitted')
+    expect(compacted[3]).toEqual(withShot[3])
+  })
+
+  it('drops the oldest runs past the size cap but always keeps the newest', () => {
+    const runs = [run('one', 'x'.repeat(500)), run('two', 'y'.repeat(500)), run('three', 'z')]
+    expect(compactHistory(runs, 700).map((r) => r[0].content)).toEqual(['two', 'three'])
+    expect(compactHistory(runs, 1).map((r) => r[0].content)).toEqual(['three'])
   })
 })
 

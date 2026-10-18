@@ -10,6 +10,7 @@ import type { LocalPoint, Radians } from '@excalidraw/excalidraw/math/types'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import type { ElementUpdate } from '../../../shared/agentTools'
 import type { AgentToolResult } from '../../../shared/ipc'
+import { DEFAULT_FONT_FAMILY } from '../../canvas/defaultFont'
 import { commitChanges, selectable } from './commit'
 
 interface Box {
@@ -56,13 +57,15 @@ const layoutLabel = (
 ) => {
   const label = {
     text,
-    ...(like && {
-      fontSize: like.fontSize,
-      fontFamily: like.fontFamily,
-      strokeColor: like.strokeColor,
-      textAlign: like.textAlign,
-      verticalAlign: like.verticalAlign,
-    }),
+    ...(like
+      ? {
+          fontSize: like.fontSize,
+          fontFamily: like.fontFamily,
+          strokeColor: like.strokeColor,
+          textAlign: like.textAlign,
+          verticalAlign: like.verticalAlign,
+        }
+      : { fontFamily: DEFAULT_FONT_FAMILY }),
   }
   const { id, x, y } = container
   const skeleton: ExcalidrawElementSkeleton =

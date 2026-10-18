@@ -9,6 +9,7 @@ import {
   type ElementSkeletonInput,
 } from '../src/shared/agentTools'
 import { prepareSkeletons } from '../src/renderer/agent/tools/skeletons'
+import { DEFAULT_FONT_FAMILY } from '../src/renderer/canvas/defaultFont'
 
 const flowchart = {
   elements: [
@@ -130,6 +131,37 @@ describe('prepareSkeletons', () => {
     expect([...prepared.phantomIds]).toEqual(['old'])
     expect(prepared.skeletons[1]).toMatchObject({ type: 'rectangle', id: 'old', x: 500, width: 80 })
     expect(prepared.skeletons[0]).toMatchObject({ end: { id: 'old' } })
+  })
+
+  it("sets Tabula's font on new text, labels and arrow-end text, but not on stand-ins", () => {
+    const existing = {
+      id: 'old',
+      type: 'text',
+      x: 0,
+      y: 0,
+      text: 'Old',
+      fontSize: 20,
+      fontFamily: 5,
+      isDeleted: false,
+    } as unknown as ExcalidrawElement
+    const prepared = prepareSkeletons(
+      inputs({
+        elements: [
+          ...flowchart.elements.slice(0, 4),
+          { type: 'text', x: 0, y: 400, text: 'Note' },
+          { type: 'arrow', x: 0, y: 500, end: { id: 'old' } },
+        ],
+      }),
+      new Map([['old', existing]]),
+      ids(),
+    )
+    const [a, b, ab, loose, note, , old] = prepared.skeletons
+    expect(a).toMatchObject({ label: { text: 'Start', fontFamily: DEFAULT_FONT_FAMILY } })
+    expect(b).toMatchObject({ label: { fontFamily: DEFAULT_FONT_FAMILY } })
+    expect(ab).toMatchObject({ label: { fontFamily: DEFAULT_FONT_FAMILY } })
+    expect(loose).toMatchObject({ end: { type: 'text', text: 'Done', fontFamily: DEFAULT_FONT_FAMILY } })
+    expect(note).toMatchObject({ type: 'text', fontFamily: DEFAULT_FONT_FAMILY })
+    expect(old).toMatchObject({ id: 'old', fontFamily: 5 })
   })
 
   it('leaves placement to the caller when no coordinates are given', () => {

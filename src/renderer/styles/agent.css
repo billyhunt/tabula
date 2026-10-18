@@ -75,36 +75,117 @@
   pointer-events: none;
 }
 
-/* ── Ask bar ─────────────────────────────────────────────────────────────── */
+/* ── Chat ────────────────────────────────────────────────────────────────── */
 
-.ask-bar {
-  position: absolute;
-  left: 50%;
-  /* Clears Excalidraw's footer (zoom, undo, help). */
-  bottom: 4.5rem;
-  z-index: 20;
-  width: min(680px, calc(100% - 2rem));
-  transform: translateX(-50%);
-  background: var(--panel);
-  color: var(--panel-fg);
-  border: var(--rule) solid var(--border);
-  box-shadow: 6px 6px 0 var(--border);
+/* A tab of Excalidraw's sidebar: the conversation fills it, the box sits at the foot. */
+.excalidraw .chat-tab {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
-.ask-log {
-  max-height: 40vh;
+.chat {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  padding: 0.75rem 0.75rem 0.75rem;
+  color: var(--panel-fg);
+  font-family: var(--font-prose);
+}
+
+/* Excalidraw styles every textarea in its tree as a boxed field; the
+   composer is the box here. */
+.excalidraw .chat .ask-input {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.chat-log {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 0.8rem 1rem;
-  border-bottom: var(--rule) solid var(--border);
   font-size: 0.92rem;
   line-height: 1.45;
 }
 
-.ask-log p {
+.chat-empty {
+  color: var(--text-muted);
+}
+
+.chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0.5rem 0.25rem 0.25rem 0.6rem;
+  background: var(--panel);
+  border: var(--rule) solid var(--border);
+}
+
+.chat-composer:focus-within {
+  border-color: var(--accent-hot);
+}
+
+.chat-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.excalidraw .chat-send {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--code-bg);
+  color: var(--accent-hot);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.excalidraw .chat-send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.chat-new {
+  float: right;
+  margin: 0 0 0.4rem 0.8rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.chat-new:hover,
+.chat-new:focus-visible {
+  color: var(--accent);
+}
+
+.ask-run + .ask-run {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--border);
+}
+
+.chat-log p {
   margin: 0 0 0.5rem;
 }
 
-.ask-log p:last-child {
+.chat-log p:last-child {
   margin-bottom: 0;
 }
 
@@ -150,39 +231,20 @@
   cursor: pointer;
 }
 
-.ask-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0;
-  padding: 0.5rem 0.5rem 0.5rem 0;
-}
-
-/* The label is a black block with the hot orange on it, like the title bar. */
-.ask-label {
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  margin: -0.5rem 0;
-  padding: 0 0.9rem;
-  background: var(--code-bg);
-  color: var(--accent-hot);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .ask-input {
   flex: 1;
   min-width: 0;
-  padding: 0.45rem 0.2rem;
+  max-height: 8.5rem;
+  padding: 0.3rem 0;
   border: 0;
   background: transparent;
   color: inherit;
   font-family: var(--font-prose);
   font-size: 1rem;
+  line-height: 1.4;
+  /* Grows with what's typed (Shift+Enter for a new line), up to max-height. */
+  field-sizing: content;
+  resize: none;
   outline: none;
 }
 
@@ -190,19 +252,87 @@
   color: var(--text-muted);
 }
 
-.ask-scope {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-  white-space: nowrap;
+/* ── Model menu ──────────────────────────────────────────────────────────── */
+
+.model-picker {
+  position: relative;
+  flex: none;
 }
 
-.ask-setup p {
-  flex: 1;
-  margin: 0;
+.model-picker-button {
+  height: 2rem;
+  max-width: 12rem;
+  padding: 0 0.5rem;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.model-picker-button::after {
+  content: ' ▾';
+}
+
+.model-picker-button:hover,
+.model-picker-button[aria-expanded='true'] {
+  color: var(--accent);
+}
+
+.model-picker-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.6rem);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 14rem;
+  max-height: 50vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: var(--rule) solid var(--border);
+  box-shadow: 6px 6px 0 var(--border);
+}
+
+.model-picker-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0.8rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: var(--font-prose);
   font-size: 0.92rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-picker-item:hover,
+.model-picker-item:focus-visible {
+  background: var(--code-bg);
+  color: var(--accent-hot);
+  outline: none;
+}
+
+.model-picker-item[aria-checked='true']::after {
+  content: '✓';
+  color: var(--accent);
+}
+
+.model-picker-item.is-more {
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* ── Settings ────────────────────────────────────────────────────────────── */
@@ -293,7 +423,8 @@
   color: var(--text-muted);
 }
 
-.settings-field input {
+.settings-field input:not([type='checkbox']),
+.settings-field select {
   padding: 0.45rem 0.6rem;
   border: 2px solid var(--border);
   border-radius: 0;
@@ -303,7 +434,8 @@
   font-size: 0.85rem;
 }
 
-.settings-field input:focus {
+.settings-field input:not([type='checkbox']):focus,
+.settings-field select:focus {
   outline: none;
   border-color: var(--accent-hot);
 }
@@ -323,7 +455,7 @@
 .settings-status {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .settings-status.is-error,
@@ -340,6 +472,35 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+}
+
+/* The chat's models: a short scrolling checklist. */
+.settings-models {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 14rem;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  overflow-y: auto;
+  border: 2px solid var(--border);
+  list-style: none;
+}
+
+.settings-models code {
+  margin-left: auto;
+  padding-left: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+/* Shown when the chat sent the user here for a key. */
+.settings-ask {
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  border-left: var(--rule) solid var(--accent-hot);
+  font-weight: 600;
 }
 
 @media (prefers-color-scheme: dark) {

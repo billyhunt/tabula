@@ -24,6 +24,11 @@ export type ModelTurn = (
 
 export interface AskLoopOptions {
   prompt: string
+  /**
+   * Earlier exchanges in this chat, oldest first. Each starts with the user's
+   * prompt and ends with an assistant reply.
+   */
+  history?: readonly Anthropic.MessageParam[]
   model: string
   system: string
   tools: Anthropic.Tool[]
@@ -32,6 +37,11 @@ export interface AskLoopOptions {
   onText: (delta: string) => void
   onToolStart: (name: string) => void
   onTool: (name: string, summary: string) => void
+  /**
+   * This run's messages so far, sent whenever they can be replayed to the
+   * API as they are: never with a tool call that lacks its result.
+   */
+  onCommit?: (messages: Anthropic.MessageParam[]) => void
   signal: AbortSignal
   maxTurns?: number
 }
@@ -90,8 +100,10 @@ export const toolResultContent = (
  * Throws the abort reason when cancelled and TurnLimitError past the cap.
  */
 export const runAskLoop = async (options: AskLoopOptions): Promise<void> => {
-  const { signal, maxTurns = MAX_TURNS } = options
+  const { signal, maxTurns = MAX_TURNS, history = [] } = options
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: options.prompt }]
+  const commit = () => options.onCommit?.([...messages])
+  commit()
 
   for (let turn = 0; turn < maxTurns; turn++) {
     signal.throwIfAborted()
@@ -103,7 +115,7 @@ export const runAskLoop = async (options: AskLoopOptions): Promise<void> => {
         // runs; the top-level one caches the growing conversation per turn.
         system: [{ type: 'text', text: options.system, cache_control: { type: 'ephemeral' } }],
         tools: options.tools,
-        messages,
+        messages: [...history, ...messages],
         cache_control: { type: 'ephemeral' },
       },
       signal,
@@ -112,11 +124,32 @@ export const runAskLoop = async (options: AskLoopOptions): Promise<void> => {
     messages.push({ role: 'assistant', content: response.content })
 
     const calls = response.content.filter((block) => block.type === 'tool_use')
-    if (response.stop_reason !== 'tool_use' || !calls.length) return
+    if (response.stop_reason !== 'tool_use' || !calls.length) {
+      if (calls.length) {
+        // A reply cut off mid-call (max_tokens) can't be replayed with an
+        // unanswered call in it; keep only what was said.
+        const said = response.content.filter((block) => block.type !== 'tool_use')
+        messages[messages.length - 1] = {
+          role: 'assistant',
+          content: said.length ? said : '(The reply was cut off.)',
+        }
+      }
+      commit()
+      return
+    }
 
     const results: Anthropic.ToolResultBlockParam[] = []
     for (const call of calls) {
-      signal.throwIfAborted()
+      if (signal.aborted) {
+        // Answer every call, so the chat can carry on after the stop.
+        results.push({
+          type: 'tool_result',
+          tool_use_id: call.id,
+          content: 'Not run: the user stopped this request.',
+          is_error: true,
+        })
+        continue
+      }
       options.onToolStart(call.name)
       try {
         const result = await options.runTool(call.name, call.input)
@@ -133,8 +166,48 @@ export const runAskLoop = async (options: AskLoopOptions): Promise<void> => {
       }
     }
     messages.push({ role: 'user', content: results })
+    commit()
   }
   throw new TurnLimitError(
     `Stopped after ${maxTurns} steps without finishing. Ask again to carry on from here.`,
   )
+}
+
+const SCREENSHOT_OMITTED: Anthropic.TextBlockParam = {
+  type: 'text',
+  text: '[Screenshot omitted from the chat history.]',
+}
+
+/**
+ * Shrinks a chat's past runs before they are replayed: screenshots the model
+ * has already seen become a placeholder, and the oldest runs are dropped
+ * while the history is over `maxChars` (the newest run always stays).
+ */
+export const compactHistory = (
+  runs: readonly Anthropic.MessageParam[][],
+  maxChars: number,
+): Anthropic.MessageParam[][] => {
+  const stripped = runs.map((run) =>
+    run.map((message): Anthropic.MessageParam => {
+      if (typeof message.content === 'string') return message
+      return {
+        ...message,
+        content: message.content.map((block) =>
+          block.type === 'tool_result' && Array.isArray(block.content)
+            ? {
+                ...block,
+                content: block.content.map((part) =>
+                  part.type === 'image' ? SCREENSHOT_OMITTED : part,
+                ),
+              }
+            : block,
+        ),
+      }
+    }),
+  )
+  let size = JSON.stringify(stripped).length
+  while (stripped.length > 1 && size > maxChars) {
+    size -= JSON.stringify(stripped.shift()).length
+  }
+  return stripped
 }

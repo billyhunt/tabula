@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
 import { defineConfig, type Plugin } from 'vite'
@@ -26,6 +27,16 @@ export default defineConfig({
   define: {
     // Excalidraw reads process.env.IS_PREACT at import time.
     'process.env.IS_PREACT': JSON.stringify('false'),
+  },
+  resolve: {
+    alias: [
+      // New Mermaid text gets Tabula's font; see the module. Only the bare
+      // specifier: the module itself imports the real one by its dist path.
+      {
+        find: /^@excalidraw\/mermaid-to-excalidraw$/,
+        replacement: fileURLToPath(new URL('src/renderer/mermaid/mermaidWithFont.ts', import.meta.url)),
+      },
+    ],
   },
   plugins: [
     react(),

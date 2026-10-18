@@ -22,7 +22,15 @@ export interface DocumentController {
   saveAs(): Promise<string | null>
   /** Saves to `path` without a dialog and makes it the current path. */
   saveTo(path: string): Promise<string>
-  newDrawing(options?: { force?: boolean }): void
+  /**
+   * Saves unsaved edits the way autosave does, without a dialog: to the
+   * current path, or for a drawing never saved, to a new file in
+   * Documents/Tabula. Resolves true once nothing is left unsaved, false when
+   * autosave is off and there are unsaved edits.
+   */
+  flush(): Promise<boolean>
+  /** Starts a blank drawing, first saving or confirming unsaved edits unless forced. */
+  newDrawing(options?: { force?: boolean }): Promise<void>
   /** The scene as file contents in the format `targetPath` implies. */
   serialize(targetPath: string): string
 }

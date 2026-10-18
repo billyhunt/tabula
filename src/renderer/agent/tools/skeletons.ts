@@ -2,6 +2,7 @@ import type { ExcalidrawElementSkeleton } from '@excalidraw/excalidraw/element/t
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { LocalPoint, Radians } from '@excalidraw/excalidraw/math/types'
 import type { ElementSkeletonInput, EndpointInput } from '../../../shared/agentTools'
+import { withDefaultFont } from '../../canvas/defaultFont'
 
 /**
  * Turns add_elements input into skeletons for `convertToExcalidrawElements`
@@ -193,7 +194,8 @@ export const prepareSkeletons = (
   })
 
   return {
-    skeletons: [...skeletons, ...phantoms.values()],
+    // New text takes Tabula's font; stand-ins keep their element's.
+    skeletons: [...skeletons.map(withDefaultFont), ...phantoms.values()],
     idMap,
     phantomIds: new Set(phantoms.keys()),
     positioned:

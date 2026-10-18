@@ -12,7 +12,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
-    "package": "npm run licenses && npm run build && electron-builder --mac --dir",
+    "package": "npm run licenses && npm run build && electron-builder --mac --dir && node scripts/open-app.mjs",
+    "open": "node scripts/open-app.mjs",
     "test": "vitest run",
     "licenses": "node scripts/collect-licenses.mjs",
     "test:e2e": "npm run build && playwright test"

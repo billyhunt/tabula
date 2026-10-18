@@ -40,7 +40,7 @@ const toBase64 = (bytes: Uint8Array) => {
 }
 
 const UNSAVED =
-  'The current drawing has unsaved changes; save it first or pass discardChanges: true'
+  'The current drawing has unsaved changes and autosave is off; save it first or pass discardChanges: true'
 
 const buildHandlers = (
   api: ExcalidrawImperativeAPI,
@@ -121,10 +121,11 @@ const buildHandlers = (
       }
     },
 
-    new_drawing: (args) => {
+    new_drawing: async (args) => {
       const { discardChanges } = parseToolArgs('new_drawing', newDrawingInput, args)
-      if (docRef.current.dirty && !discardChanges) throw new Error(UNSAVED)
-      docRef.current.newDrawing({ force: true })
+      // With autosave on, unsaved edits are saved rather than refused.
+      if (!discardChanges && !(await docRef.current.flush())) throw new Error(UNSAVED)
+      await docRef.current.newDrawing({ force: true })
       return { text: 'Started a new drawing' }
     },
 
@@ -144,7 +145,7 @@ const buildHandlers = (
       }
       // Checked here, right before replacing the scene, rather than in an
       // earlier round trip the user could have edited after.
-      if (docRef.current.dirty && !discardChanges) throw new Error(UNSAVED)
+      if (!discardChanges && !(await docRef.current.flush())) throw new Error(UNSAVED)
       await docRef.current.load(file)
       return { text: `Opened ${file.path}` }
     },
