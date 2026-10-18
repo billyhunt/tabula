@@ -28,6 +28,12 @@ jobs:
 
       - run: npm ci
 
+      # Newer npm releases skip dependencies' install scripts unless approved,
+      # and Electron's is what downloads the app binary the e2e tests launch.
+      # Running it directly works either way (it's a no-op once downloaded).
+      - name: Electron binary
+        run: node node_modules/electron/install.js
+
       - name: Type check
         run: npm run typecheck
 

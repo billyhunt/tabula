@@ -302,9 +302,9 @@ export const CANVAS_TOOLS: CanvasToolSpec[] = [
     description:
       'Draw a Mermaid diagram as editable elements, placed with its top-left at x/y or in the ' +
       'middle of the view. One undoable step; the new elements end up selected. Often the ' +
-      'quickest way to draw a flowchart. Only flowchart, sequence and class diagrams become ' +
-      'editable shapes; other types (ER, state, architecture, …) would arrive as a single ' +
-      'picture, so they are refused unless asPicture is true. Prefer rewriting as a flowchart.',
+      'quickest way to draw a flowchart. Diagram types the converter cannot turn into shapes ' +
+      '(Gantt charts, pie charts, …) would arrive as a single uneditable picture, so those are ' +
+      'refused unless asPicture is true; rewrite such a diagram as a flowchart instead.',
     input: importMermaidInput,
     availability: 'all',
   },
