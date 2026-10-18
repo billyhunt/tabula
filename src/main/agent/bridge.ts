@@ -9,7 +9,7 @@ import {
 
 /**
  * Runs canvas tools inside a window. The scene lives in the renderer, so
- * both the MCP server and the Ask bar reach it through here.
+ * both the MCP server and the chat reach it through here.
  */
 
 interface Pending {

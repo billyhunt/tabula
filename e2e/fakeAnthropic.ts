@@ -1,7 +1,7 @@
 /**
  * A stand-in for the Anthropic Messages API, so end-to-end tests can drive
- * the Ask bar and Text to diagram without a real key. Launch the app with
- * ANTHROPIC_BASE_URL set to `url` and ANTHROPIC_API_KEY set to anything.
+ * the chat and Text to diagram without a real key. Launch the app with
+ * ANTHROPIC_BASE_URL set to `url` and a key from the environment or Settings.
  *
  * Each request gets the next scripted reply, streamed as SSE the way the SDK
  * expects; once the script runs out, the model just says "Done."

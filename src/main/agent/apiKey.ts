@@ -46,10 +46,23 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api'
 
 /**
  * SDK options for a provider. OpenRouter speaks the Anthropic Messages API
- * and wants its key as a bearer token; the explicit nulls keep the SDK from
- * adding ANTHROPIC_* credentials from the environment to either request.
+ * and wants its key as a bearer token. The SDK adds ANTHROPIC_* credentials
+ * and ANTHROPIC_CUSTOM_HEADERS from the environment to every request; the
+ * explicit nulls keep the credentials off both providers, and OpenRouter
+ * also loses the custom headers, which are meant for Anthropic or a gateway.
  */
-export const clientOptions = (provider: Provider, key: string): ClientOptions =>
-  provider === 'openrouter'
-    ? { baseURL: OPENROUTER_BASE_URL, apiKey: null, authToken: key }
-    : { apiKey: key, authToken: null }
+export const clientOptions = (provider: Provider, key: string, env: KeyEnv): ClientOptions => {
+  if (provider !== 'openrouter') return { apiKey: key, authToken: null }
+  // Parsed as the SDK does: "name: value" lines; others it ignores.
+  const customHeaderNames = (env.ANTHROPIC_CUSTOM_HEADERS ?? '')
+    .split('\n')
+    .filter((line) => line.includes(':'))
+    .map((line) => line.slice(0, line.indexOf(':')).trim())
+    .filter(Boolean)
+  return {
+    baseURL: OPENROUTER_BASE_URL,
+    apiKey: null,
+    authToken: key,
+    defaultHeaders: Object.fromEntries(customHeaderNames.map((name) => [name, null])),
+  }
+}

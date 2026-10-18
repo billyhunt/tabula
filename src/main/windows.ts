@@ -24,8 +24,9 @@ app.on('before-quit', () => {
 
 /**
  * Has the window save what autosave would before it closes. Resolves true
- * when it may close: saved, nothing to save, or autosave is off. When the
- * save fails, the user chooses between keeping the window and losing edits.
+ * when it may close: saved, or nothing to save. Otherwise (autosave off, or
+ * the save failed) the user chooses between keeping the window and losing
+ * the edits.
  */
 const saveBeforeClose = async (win: BrowserWindow): Promise<boolean> => {
   const answer = await new Promise<unknown>((resolve) => {
@@ -42,12 +43,17 @@ const saveBeforeClose = async (win: BrowserWindow): Promise<boolean> => {
     win.webContents.send(Channels.flushRequest)
   })
   const parsed = FlushResultSchema.safeParse(answer)
-  if (parsed.success && (parsed.data.ok || parsed.data.error === null)) return true
-  const detail = parsed.success && !parsed.data.ok ? parsed.data.error : "The drawing didn't answer in time."
+  if (parsed.success && parsed.data.ok) return true
+  const autosaveOff = parsed.success && !parsed.data.ok && parsed.data.error === null
+  const detail = !parsed.success
+    ? "The drawing didn't answer in time."
+    : parsed.data.ok
+      ? undefined
+      : (parsed.data.error ?? 'Autosave is off. Save it first (⌘S) to keep the changes.')
   const { response } = await dialog.showMessageBox(win, {
     type: 'warning',
-    message: "Tabula couldn't save this drawing.",
-    detail: detail ?? undefined,
+    message: autosaveOff ? 'This drawing has unsaved changes.' : "Tabula couldn't save this drawing.",
+    detail,
     buttons: ['Cancel', 'Close Without Saving'],
     defaultId: 0,
     cancelId: 0,
@@ -78,19 +84,24 @@ export const createWindow = (filePath?: string) => {
   win.on('focus', () => {
     lastFocused = win
   })
-  // Unsaved edits are written before the window goes, quit included.
+  // Unsaved edits are written before the window goes, quit included. One
+  // save-and-ask at a time: closing again while it runs waits for it.
   let saved = false
+  let closing = false
   win.on('close', (event) => {
     if (saved || !win.isDocumentEdited() || win.webContents.isCrashed()) return
     event.preventDefault()
+    if (closing) return
+    closing = true
     void saveBeforeClose(win).then((mayClose) => {
+      closing = false
       if (!mayClose) {
         quitting = false
         return
       }
       saved = true
       if (quitting) app.quit()
-      else win.close()
+      else if (!win.isDestroyed()) win.close()
     })
   })
   win.on('closed', () => {

@@ -199,13 +199,22 @@ export const App = () => {
 
   const flush = useCallback(async () => {
     if (!api) return true
-    if (hashElementsVersion(api.getSceneElementsIncludingDeleted()) === savedHash.current) return true
+    const unsaved = () => hashElementsVersion(api.getSceneElementsIncludingDeleted()) !== savedHash.current
+    if (!unsaved()) return true
     if (!autosaveEnabled.current) return false
-    // A board never saved with nothing left on it (drawn, then deleted) isn't worth a file.
-    if (!filePath && api.getSceneElements().length === 0) return true
+    // A board never saved with nothing left on it (drawn, then deleted) isn't
+    // worth a file; it counts as saved.
+    if (!filePath && api.getSceneElements().length === 0) {
+      savedHash.current = hashElementsVersion(api.getSceneElementsIncludingDeleted())
+      setDirty(false)
+      return true
+    }
     // The promise is shared, so saves racing to start pick the same file.
     const target = filePath ?? (await (untitledTarget.current ??= window.tabula.untitledPath()))
-    await saveTo(target)
+    // Edits made while a save is writing stay unsaved; save again for those,
+    // so a close never acknowledges work that isn't on disk.
+    for (let attempt = 0; attempt < 3 && unsaved(); attempt++) await saveTo(target)
+    if (unsaved()) throw new Error('The drawing kept changing while it was being saved.')
     return true
   }, [api, autosaveEnabled, filePath, saveTo])
 

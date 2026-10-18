@@ -6,7 +6,7 @@ export interface AgentSettings {
   /** The local MCP server is off until the user turns it on. */
   mcpEnabled: boolean
   mcpPort: number
-  /** Service the Ask bar and Text to diagram call. Keys live in main's key store, not here. */
+  /** Service the chat and Text to diagram call. Keys live in main's key store, not here. */
   provider: Provider
   /** The model in use per provider, so switching back keeps each one's choice. */
   models: Record<Provider, string>
@@ -25,7 +25,7 @@ export interface Settings {
    * drawing never saved gets a new file in Documents/Tabula.
    */
   autosave: boolean
-  /** The chat at the bottom of the window; View ▸ Show Chat. */
+  /** The chat tab in the sidebar, open at launch; View ▸ Show Chat. */
   showChat: boolean
   agent: AgentSettings
 }

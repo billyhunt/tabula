@@ -25,7 +25,8 @@ const coerce = (raw: unknown): Settings => {
   const d = DEFAULT_SETTINGS
   const port = agent.mcpPort
   const model = (provider: Provider) => {
-    const value = models[provider]
+    // Before per-provider models, the one model lived in `agent.model` (Anthropic).
+    const value = models[provider] ?? (provider === 'anthropic' ? agent.model : undefined)
     return typeof value === 'string' && value.trim() ? value.trim() : d.agent.models[provider]
   }
   // The chat's model menu: the stored list in its order, cleaned up, with the
@@ -94,11 +95,16 @@ export const updateSettings = async (patch: SettingsPatch): Promise<Settings> =>
   writing = writing
     .catch(() => undefined)
     .then(() => writeFile(settingsFile(), JSON.stringify(next, null, 2), 'utf8'))
-  await writing
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send(Channels.settingsChanged, next)
+  try {
+    await writing
+  } finally {
+    // The app runs on `cache`; tell everyone even when the write failed (the
+    // caller still gets the error), so windows and the menu never disagree.
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(Channels.settingsChanged, next)
+    }
+    for (const listener of listeners) listener(next, previous)
   }
-  for (const listener of listeners) listener(next, previous)
   return next
 }
 

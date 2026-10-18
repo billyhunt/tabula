@@ -1,7 +1,7 @@
 /**
  * Drives the built app end to end: drawing and text editing, the MCP server
  * an external agent would use, every export format, saving and versions,
- * the Ask bar against a fake Anthropic API, and Text to diagram.
+ * the chat against a fake Anthropic API, and Text to diagram.
  *
  * Run with `npm run test:e2e` (builds first). Set TABULA_E2E_APP to a
  * packaged app's binary (…/Tabula.app/Contents/MacOS/Tabula) to run the same
@@ -128,11 +128,14 @@ test('the editor loads its bundled fonts and edits text inside a shape', async (
   })
   expect(comicShanns.length).toBeGreaterThan(0)
   expect(comicShanns.every((status) => status === 'loaded')).toBe(true)
-  // The caret sits in the middle of the shape, not offset from it.
-  const box = await editor.boundingBox()
-  expect(box).not.toBeNull()
-  expect(Math.abs(box!.y + box!.height / 2 - 525)).toBeLessThan(6)
-  expect(Math.abs(box!.x + box!.width / 2 - 350)).toBeLessThan(6)
+  // The caret sits in the middle of the shape, not offset from it. Polled:
+  // the editor re-measures once the font it was waiting for arrives.
+  const offCentre = async () => {
+    const box = await editor.boundingBox()
+    if (!box) return Infinity
+    return Math.max(Math.abs(box.y + box.height / 2 - 525), Math.abs(box.x + box.width / 2 - 350))
+  }
+  await expect.poll(offCentre).toBeLessThan(6)
   await page.keyboard.press('Escape')
   await page.screenshot({ path: path.join(tmp, 'text-edit.png') })
 })
@@ -230,7 +233,7 @@ test('an agent draws, exports every format, and saves over MCP', async () => {
 })
 
 test('the chat asks for a key, then runs Claude with the canvas tools and remembers the conversation', async () => {
-  // Docked at the bottom from the start.
+  // Open in the sidebar from the start.
   const input = page.locator('.ask-input')
   await expect(input).toBeVisible()
 
@@ -244,38 +247,42 @@ test('the chat asks for a key, then runs Claude with the canvas tools and rememb
   await keyField.fill('sk-ant-e2e-key')
   await keyField.press('Enter')
   await expect(settings).toContainText('A key is saved')
-
-  // Settings lists the provider's models; ticked ones go in the chat's menu.
-  const opus = settings.getByRole('checkbox', { name: /Opus 5\.5/ })
-  await opus.click()
-  // Ticked once the setting round-trips through main.
-  await expect(opus).toBeChecked()
   await page.keyboard.press('Escape')
   await expect(settings).toBeHidden()
+
+  // The message waited; with the key in, Enter sends it.
   await expect(input).toHaveValue('Add a box that says From Ask')
-
-  await page.getByRole('button', { name: 'Sonnet 5.5' }).click()
-  const menu = page.getByRole('menu', { name: 'Model' })
-  await expect(menu.getByRole('menuitemradio')).toHaveText(['Opus 5.5', 'Sonnet 5.5'])
-  await expect(menu.getByRole('menuitemradio', { name: 'Sonnet 5.5' })).toHaveAttribute('aria-checked', 'true')
-  await menu.getByRole('menuitemradio', { name: 'Opus 5.5' }).click()
-  await expect(page.getByRole('button', { name: 'Opus 5.5' })).toBeVisible()
-
   await input.press('Enter')
   await expect(page.locator('.ask-text').last()).toContainText('Added a box.')
-  expect(fake.requests[0]).toMatchObject({ model: 'claude-opus-5-5' })
+  expect(fake.requests[0]).toMatchObject({ model: 'claude-sonnet-5-5' })
 
   const labels = (await sceneJson()).elements.map((e) => e.label ?? e.text)
   expect(labels).toContain('From Ask')
   // The model saw the result of its tool call.
   expect(JSON.stringify(fake.requests[1])).toContain('tool_result')
 
-  // A follow-up carries the earlier exchange, tool calls included.
+  // The model menu offers the models ticked in Settings.
+  await page.getByRole('button', { name: 'Sonnet 5.5' }).click()
+  const menu = page.getByRole('menu', { name: 'Model' })
+  await menu.getByRole('menuitem', { name: 'Choose models…' }).click()
+  const opus = settings.getByRole('checkbox', { name: /Opus 5\.5/ })
+  await opus.click()
+  // Ticked once the setting round-trips through main.
+  await expect(opus).toBeChecked()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Sonnet 5.5' }).click()
+  await expect(menu.getByRole('menuitemradio')).toHaveText(['Opus 5.5', 'Sonnet 5.5'])
+  await expect(menu.getByRole('menuitemradio', { name: 'Sonnet 5.5' })).toHaveAttribute('aria-checked', 'true')
+  await menu.getByRole('menuitemradio', { name: 'Opus 5.5' }).click()
+  await expect(page.getByRole('button', { name: 'Opus 5.5' })).toBeVisible()
+
+  // A follow-up, on the newly chosen model, carries the earlier exchange.
   await input.fill('What does the box say?')
   await input.press('Enter')
   await expect(page.locator('.ask-text').last()).toContainText('It says From Ask.')
   await expect(page.locator('.ask-run')).toHaveCount(2)
   await page.screenshot({ path: path.join(tmp, 'ask.png') })
+  expect(fake.requests.at(-1)).toMatchObject({ model: 'claude-opus-5-5' })
   const followUp = JSON.stringify(fake.requests.at(-1))
   expect(followUp).toContain('Add a box that says From Ask')
   expect(followUp).toContain('Added a box.')
@@ -317,7 +324,7 @@ test("text from every source uses Tabula's font, including Excalidraw's Mermaid 
   await dialog.getByRole('button', { name: /insert/i }).click()
   await expect(dialog).toBeHidden()
 
-  // Typed text, add_elements labels, the Ask bar's box, import_mermaid and the dialog.
+  // Typed text, add_elements labels, the chat's box, import_mermaid and the dialog.
   await call('save')
   const drawing = path.join(tmp, 'Board.excalidraw.md')
   const json = /```json\n([\s\S]*?)```/.exec(readFileSync(drawing, 'utf8'))?.[1] ?? '{}'

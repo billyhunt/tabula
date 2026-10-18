@@ -1,5 +1,5 @@
 /**
- * The Ask bar's tool loop, free of Electron so it can run against a fake
+ * The chat's tool loop, free of Electron so it can run against a fake
  * model and fake canvas in tests. src/main/agent/ask.ts wires it to the
  * Anthropic SDK and the window's canvas tools.
  */
@@ -103,6 +103,9 @@ export const runAskLoop = async (options: AskLoopOptions): Promise<void> => {
   const { signal, maxTurns = MAX_TURNS, history = [] } = options
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: options.prompt }]
   const commit = () => options.onCommit?.([...messages])
+  // The model may name any tool; only the ones it was offered run. Others
+  // (the bridge's file tools, MCP-only ones) are refused like a failed call.
+  const offered = new Set(options.tools.map((tool) => tool.name))
   commit()
 
   for (let turn = 0; turn < maxTurns; turn++) {
@@ -152,6 +155,7 @@ export const runAskLoop = async (options: AskLoopOptions): Promise<void> => {
       }
       options.onToolStart(call.name)
       try {
+        if (!offered.has(call.name)) throw new Error(`Unknown tool ${call.name}`)
         const result = await options.runTool(call.name, call.input)
         results.push({
           type: 'tool_result',

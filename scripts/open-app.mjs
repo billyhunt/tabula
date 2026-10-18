@@ -24,7 +24,9 @@ const BUILD_DIRS = ['release', 'release-next']
 const QUIT_WAIT_MS = 30_000
 const EXECUTABLE = 'Tabula.app/Contents/MacOS/Tabula'
 
-if (process.platform !== 'darwin') process.exit(0)
+// Nothing to open on other platforms, or headless (CI) where packaging must
+// not quit or launch anything.
+if (process.platform !== 'darwin' || process.env.CI) process.exit(0)
 
 const builds = BUILD_DIRS.map((dir) => path.join(root, dir, 'mac-arm64', 'Tabula.app'))
   .filter((app) => existsSync(path.join(app, 'Contents', 'Resources', 'app.asar')))

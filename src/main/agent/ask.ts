@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import type { BrowserWindow, WebContents } from 'electron'
-import { CANVAS_TOOLS } from '../../shared/agentTools'
+import { CANVAS_TOOLS, findCanvasTool, parseToolArgs } from '../../shared/agentTools'
 import type { AskEvent } from '../../shared/ipc'
 import { activeModel } from '../../shared/settings'
 import { getSettings } from '../settings'
@@ -38,6 +38,12 @@ const MAX_HISTORY_CHARS = 200_000
 interface Chat {
   /** Finished runs, oldest first; each opens with a prompt and ends with a reply. */
   runs: Anthropic.MessageParam[][]
+  /**
+   * Settles when the latest run has recorded itself. A run starts only after
+   * the one before it, so a stopped run still unwinding lands in the history
+   * ahead of the question that replaced it.
+   */
+  idle: Promise<void>
 }
 
 // One chat per window, gone with the window.
@@ -45,7 +51,7 @@ const chats = new WeakMap<WebContents, Chat>()
 
 /** Starts the window's next Ask on a clean slate. */
 export const resetChat = (sender: WebContents) => {
-  chats.set(sender, { runs: [] })
+  chats.set(sender, { runs: [], idle: Promise.resolve() })
 }
 
 const streamTurn =
@@ -68,11 +74,15 @@ export const runAsk = async (
   emit: (update: AskUpdate) => void,
 ): Promise<void> => {
   const sender = win.webContents
-  const chat = chats.get(sender) ?? { runs: [] }
+  const chat = chats.get(sender) ?? { runs: [], idle: Promise.resolve() }
   chats.set(sender, chat)
+  const before = chat.idle
+  const { promise: recorded, resolve: markRecorded } = Promise.withResolvers<void>()
+  chat.idle = recorded
   let run: Anthropic.MessageParam[] = []
   reportActivity({ source: 'ask', active: true, label: 'Thinking' })
   try {
+    await before
     const client = anthropicClient()
     await runAskLoop({
       prompt,
@@ -81,7 +91,12 @@ export const runAsk = async (
       system: SYSTEM_PROMPT,
       tools: toolDefinitions(CANVAS_TOOLS),
       turn: streamTurn(client),
-      runTool: (name, input) => callCanvasTool(win, name, input),
+      // runAskLoop only passes tools it offered; check each input like MCP does.
+      runTool: (name, input) => {
+        const spec = findCanvasTool(name)
+        if (spec?.availability !== 'all') throw new Error(`Unknown tool ${name}`)
+        return callCanvasTool(win, name, parseToolArgs(name, spec.input, input))
+      },
       onText: (text) => emit({ type: 'text', text }),
       onToolStart: (name) => reportActivity({ source: 'ask', active: true, label: humanizeTool(name) }),
       onTool: (tool, summary) => emit({ type: 'tool', tool, summary }),
@@ -106,5 +121,6 @@ export const runAsk = async (
     if (run.length && chats.get(sender) === chat) {
       chat.runs = compactHistory([...chat.runs, run], MAX_HISTORY_CHARS)
     }
+    markRecorded()
   }
 }

@@ -180,7 +180,7 @@ const buildHandlers = (
 }
 
 /**
- * Runs the canvas tools main sends (from the MCP server or the Ask bar)
+ * Runs the canvas tools main sends (from the MCP server or the chat)
  * against this window's editor, one undo step per change.
  */
 export const useCanvasTools = (api: ExcalidrawImperativeAPI | null, doc: DocumentController) => {
