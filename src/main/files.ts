@@ -46,17 +46,44 @@ export const untitledDrawingPath = async (now = new Date()): Promise<string> => 
 
 const untitledFolder = () => path.join(app.getPath('documents'), 'Tabula')
 
-const UNTITLED_NAME = /^Untitled \d{4}-\d{2}-\d{2} \d{2}\.\d{2}( \d+)?\.excalidraw\.md$/
-
 /**
- * Whether a path is an untitled autosave file: named by untitledDrawingPath
- * and still in its folder. Such a drawing has never been given a name, so
- * Save asks for one.
+ * Every autosave file Tabula has allocated and not yet retired, kept in
+ * userData so it survives restarts. This, not the file's name, is what makes
+ * a path an "untitled autosave": a drawing the user saved under a name that
+ * happens to look like one is theirs, and must never be deleted.
  */
-export const isUntitledDrawing = (filePath: string) =>
-  path.isAbsolute(filePath) &&
-  path.dirname(path.normalize(filePath)) === untitledFolder() &&
-  UNTITLED_NAME.test(path.basename(filePath))
+const registryFile = () => path.join(app.getPath('userData'), 'untitled-drawings.json')
+
+const readRegistry = async (): Promise<Set<string>> => {
+  try {
+    const raw: unknown = JSON.parse(await readFile(registryFile(), 'utf8'))
+    return new Set(Array.isArray(raw) ? raw.filter((p): p is string => typeof p === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+// Read-modify-write runs one at a time, so two windows can't drop each
+// other's entries.
+let registryQueue: Promise<unknown> = Promise.resolve()
+
+const updateRegistry = <T>(change: (paths: Set<string>) => T): Promise<T> => {
+  const run = registryQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const paths = await readRegistry()
+      const before = paths.size
+      const result = change(paths)
+      if (paths.size !== before) await writeFile(registryFile(), JSON.stringify([...paths], null, 2), 'utf8')
+      return result
+    })
+  registryQueue = run
+  return run
+}
+
+/** Whether `filePath` is an autosave file Tabula allocated and still owns. */
+export const isUntitledDrawing = async (filePath: string) =>
+  path.isAbsolute(filePath) && (await readRegistry()).has(path.normalize(filePath))
 
 /**
  * Writes a drawing to disk. The single place drawings are written, so every
@@ -90,16 +117,18 @@ export const registerFileIpc = () => {
   })
 
   ipcMain.handle(Channels.pickSavePath, async (event, suggestedName: string) => {
+    const fromUntitled = await isUntitledDrawing(suggestedName)
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await dialog.showSaveDialog(win!, {
       // An untitled autosave's own name and folder aren't a suggestion worth
       // making; offer a plain name where drawings were last saved.
-      defaultPath: saveDialogPath(
-        isUntitledDrawing(suggestedName) ? 'Untitled.excalidraw.md' : suggestedName,
-      ),
+      defaultPath: saveDialogPath(fromUntitled ? 'Untitled.excalidraw.md' : suggestedName),
       filters: FILTERS,
     })
     if (result.canceled || !result.filePath) return null
+    // Chosen in a Save dialog, the file is the user's now, even if it is an
+    // autosave file saved over under its own name.
+    await updateRegistry((paths) => paths.delete(path.normalize(result.filePath)))
     app.addRecentDocument(result.filePath)
     await updateSettings({ lastSaveDir: path.dirname(result.filePath) })
     return result.filePath
@@ -107,19 +136,22 @@ export const registerFileIpc = () => {
 
   ipcMain.handle(Channels.untitledPath, async () => {
     const filePath = await untitledDrawingPath()
+    await updateRegistry((paths) => paths.add(filePath))
     app.addRecentDocument(filePath)
     return filePath
   })
 
-  ipcMain.handle(Channels.isUntitledPath, (_event, filePath: unknown) =>
-    typeof filePath === 'string' && isUntitledDrawing(filePath),
+  ipcMain.handle(Channels.isUntitledPath, async (_event, filePath: unknown) =>
+    typeof filePath === 'string' && (await isUntitledDrawing(filePath)),
   )
 
-  // Only ever removes Tabula's own untitled autosave files, never a path the
-  // renderer merely claims is one.
+  // Only ever removes an autosave file Tabula allocated itself (see the
+  // registry), never a path the renderer merely claims is one.
   ipcMain.handle(Channels.retireUntitled, async (_event, filePath: unknown) => {
-    if (typeof filePath !== 'string' || !isUntitledDrawing(filePath)) return
-    await rm(filePath, { force: true })
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) return
+    const target = path.normalize(filePath)
+    const owned = await updateRegistry((paths) => paths.delete(target))
+    if (owned) await rm(target, { force: true })
   })
 
   ipcMain.on(Channels.setDirty, (event, dirty: boolean) => {
