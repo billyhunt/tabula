@@ -20,8 +20,12 @@ export interface DocumentController {
   /** Saves to the current path, or asks for one. Resolves to the saved path. */
   save(): Promise<string | null>
   saveAs(): Promise<string | null>
-  /** Saves to `path` without a dialog and makes it the current path. */
-  saveTo(path: string): Promise<string>
+  /**
+   * Saves without a dialog, to `path` (which becomes the current file), or
+   * with null to the drawing's current file as of when the save runs, so a
+   * queued save follows a Save As that lands first.
+   */
+  saveTo(path: string | null): Promise<string>
   /**
    * Saves unsaved edits the way autosave does, without a dialog: to the
    * current path, or for a drawing never saved, to a new file in
