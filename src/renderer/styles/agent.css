@@ -175,11 +175,13 @@
   cursor: default;
 }
 
+/* A row of its own above the conversation: floated beside the first message,
+   the three labels squeezed it into a narrow, ragged column. */
 .chat-actions {
-  float: right;
   display: flex;
+  justify-content: flex-end;
   gap: 0.8rem;
-  margin: 0 0 0.4rem 0.8rem;
+  margin: 0 0 0.6rem;
 }
 
 .chat-new {
