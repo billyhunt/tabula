@@ -73,10 +73,27 @@ const sseEvents = (reply: FakeReply, n: number) => {
   return events
 }
 
+/** What GET /v1/models answers, newest first like Anthropic's. */
+export const MODEL_LIST = {
+  data: [
+    { type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', created_at: '2026-09-01T00:00:00Z' },
+    { type: 'model', id: 'claude-sonnet-5-5', display_name: 'Claude Sonnet 5.5', created_at: '2026-08-01T00:00:00Z' },
+  ],
+  has_more: false,
+  first_id: 'claude-opus-5-5',
+  last_id: 'claude-sonnet-5-5',
+}
+
 export const startFakeAnthropic = async (script: FakeReply[]): Promise<FakeAnthropic> => {
   const replies = [...script]
   const requests: unknown[] = []
   const server = http.createServer((req, res) => {
+    // The chat's model menu and Settings list models; that isn't a scripted turn.
+    if (req.method === 'GET' && req.url?.startsWith('/v1/models')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(MODEL_LIST))
+      return
+    }
     let body = ''
     req.on('data', (chunk: Buffer) => (body += chunk.toString()))
     req.on('end', () => {

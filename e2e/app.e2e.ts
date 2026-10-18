@@ -11,11 +11,12 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { inflateSync } from 'node:zlib'
 import { startFakeAnthropic, type FakeAnthropic } from './fakeAnthropic'
+import { z } from 'zod'
 
 const MCP_PORT = 47_391
 
@@ -70,6 +71,8 @@ test.beforeAll(async () => {
       ],
     },
     { text: 'Added a box.' },
+    { text: 'It says From Ask.' },
+    { text: 'Fresh start.' },
     { text: 'flowchart TD\n  A[Start] --> B[End]' },
   ])
   const packaged = process.env.TABULA_E2E_APP
@@ -82,7 +85,9 @@ test.beforeAll(async () => {
       VITE_DEV_SERVER_URL: '',
       TABULA_USER_DATA: path.join(tmp, 'profile'),
       ANTHROPIC_BASE_URL: fake.url,
-      ANTHROPIC_API_KEY: 'test-key',
+      // No key from the environment: the chat test adds one through Settings.
+      ANTHROPIC_API_KEY: '',
+      OPENROUTER_API_KEY: '',
     },
   })
   page = await app.firstWindow()
@@ -103,7 +108,8 @@ test('the editor loads its bundled fonts and edits text inside a shape', async (
   await page.evaluate(() => document.fonts.ready)
   expect(await page.evaluate(() => document.fonts.check('20px Excalifont'))).toBe(true)
 
-  await page.mouse.click(1100, 700)
+  // An empty spot left of the chat sidebar.
+  await page.mouse.click(880, 700)
   await page.keyboard.press('r')
   await page.mouse.move(250, 450)
   await page.mouse.down()
@@ -114,6 +120,14 @@ test('the editor loads its bundled fonts and edits text inside a shape', async (
   const editor = page.locator('textarea.excalidraw-wysiwyg')
   await expect(editor).toBeVisible()
   await page.keyboard.type('Hello box')
+  // New text uses Tabula's default font, not Excalidraw's, from the bundled copy.
+  expect(await editor.evaluate((el) => getComputedStyle(el).fontFamily)).toContain('Comic Shanns')
+  const comicShanns = await page.evaluate(async () => {
+    const faces = await document.fonts.load('20px "Comic Shanns"', 'Hello box')
+    return faces.map((face) => face.status)
+  })
+  expect(comicShanns.length).toBeGreaterThan(0)
+  expect(comicShanns.every((status) => status === 'loaded')).toBe(true)
   // The caret sits in the middle of the shape, not offset from it.
   const box = await editor.boundingBox()
   expect(box).not.toBeNull()
@@ -215,20 +229,73 @@ test('an agent draws, exports every format, and saves over MCP', async () => {
   await expect(page.locator('.versions-dialog')).toBeHidden()
 })
 
-test('the Ask bar runs Claude with the canvas tools', async () => {
-  await sendCommand('ask')
+test('the chat asks for a key, then runs Claude with the canvas tools and remembers the conversation', async () => {
+  // Docked at the bottom from the start.
   const input = page.locator('.ask-input')
   await expect(input).toBeVisible()
+
+  // No key yet: sending opens Settings at the key, and the message waits.
   await input.fill('Add a box that says From Ask')
   await input.press('Enter')
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  await expect(settings.getByText('Add your API key.')).toBeVisible()
+  const keyField = settings.getByLabel('Anthropic API key')
+  await expect(keyField).toBeFocused()
+  await keyField.fill('sk-ant-e2e-key')
+  await keyField.press('Enter')
+  await expect(settings).toContainText('A key is saved')
+
+  // Settings lists the provider's models; ticked ones go in the chat's menu.
+  const opus = settings.getByRole('checkbox', { name: /Opus 5\.5/ })
+  await opus.click()
+  // Ticked once the setting round-trips through main.
+  await expect(opus).toBeChecked()
+  await page.keyboard.press('Escape')
+  await expect(settings).toBeHidden()
+  await expect(input).toHaveValue('Add a box that says From Ask')
+
+  await page.getByRole('button', { name: 'Sonnet 5.5' }).click()
+  const menu = page.getByRole('menu', { name: 'Model' })
+  await expect(menu.getByRole('menuitemradio')).toHaveText(['Opus 5.5', 'Sonnet 5.5'])
+  await expect(menu.getByRole('menuitemradio', { name: 'Sonnet 5.5' })).toHaveAttribute('aria-checked', 'true')
+  await menu.getByRole('menuitemradio', { name: 'Opus 5.5' }).click()
+  await expect(page.getByRole('button', { name: 'Opus 5.5' })).toBeVisible()
+
+  await input.press('Enter')
   await expect(page.locator('.ask-text').last()).toContainText('Added a box.')
-  await page.screenshot({ path: path.join(tmp, 'ask.png') })
+  expect(fake.requests[0]).toMatchObject({ model: 'claude-opus-5-5' })
 
   const labels = (await sceneJson()).elements.map((e) => e.label ?? e.text)
   expect(labels).toContain('From Ask')
   // The model saw the result of its tool call.
   expect(JSON.stringify(fake.requests[1])).toContain('tool_result')
-  await page.keyboard.press('Escape')
+
+  // A follow-up carries the earlier exchange, tool calls included.
+  await input.fill('What does the box say?')
+  await input.press('Enter')
+  await expect(page.locator('.ask-text').last()).toContainText('It says From Ask.')
+  await expect(page.locator('.ask-run')).toHaveCount(2)
+  await page.screenshot({ path: path.join(tmp, 'ask.png') })
+  const followUp = JSON.stringify(fake.requests.at(-1))
+  expect(followUp).toContain('Add a box that says From Ask')
+  expect(followUp).toContain('Added a box.')
+  expect(followUp).toContain('What does the box say?')
+
+  // New chat starts from nothing.
+  await page.getByRole('button', { name: 'New chat' }).click()
+  await expect(page.locator('.ask-run')).toHaveCount(0)
+  await input.fill('Hello')
+  await input.press('Enter')
+  await expect(page.locator('.ask-text').last()).toContainText('Fresh start.')
+  expect(JSON.stringify(fake.requests.at(-1))).not.toContain('From Ask')
+
+  // View ▸ Show Chat hides it; ⌘J brings it back with the cursor in the box.
+  await page.evaluate(() => window.tabula.settings.update({ showChat: false }))
+  await expect(input).toBeHidden()
+  await sendCommand('ask')
+  await expect(input).toBeFocused()
+  await input.press('Escape')
+  await expect(input).not.toBeFocused()
 })
 
 test('Text to diagram streams Mermaid from Claude', async () => {
@@ -238,11 +305,46 @@ test('Text to diagram streams Mermaid from Claude', async () => {
   expect(mermaid).toContain('A[Start] --> B[End]')
 })
 
+test("text from every source uses Tabula's font, including Excalidraw's Mermaid dialog", async () => {
+  await sendCommand('import-mermaid')
+  const dialog = page.locator('.ttd-dialog')
+  await expect(dialog).toBeVisible()
+  const editor = dialog.locator('.cm-content')
+  await editor.click()
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.type('flowchart LR\n  P[From dialog] --> Q[Also]')
+  await expect(dialog.locator('.ttd-dialog-output-canvas-content canvas')).toBeVisible()
+  await dialog.getByRole('button', { name: /insert/i }).click()
+  await expect(dialog).toBeHidden()
+
+  // Typed text, add_elements labels, the Ask bar's box, import_mermaid and the dialog.
+  await call('save')
+  const drawing = path.join(tmp, 'Board.excalidraw.md')
+  const json = /```json\n([\s\S]*?)```/.exec(readFileSync(drawing, 'utf8'))?.[1] ?? '{}'
+  const SavedScene = z.object({
+    elements: z.array(
+      z.object({
+        type: z.string(),
+        text: z.string().optional(),
+        fontFamily: z.number().optional(),
+        isDeleted: z.boolean().optional(),
+      }),
+    ),
+  })
+  const texts = SavedScene.parse(JSON.parse(json)).elements.filter(
+    (e) => e.type === 'text' && !e.isDeleted,
+  )
+  expect(texts.map((e) => e.text)).toEqual(
+    expect.arrayContaining(['Hello box', 'Good?', 'From Ask', 'Imported', 'From dialog']),
+  )
+  expect(texts.filter((e) => e.fontFamily !== 8)).toEqual([])
+})
+
 test('an existing box takes a label from a double-click anywhere, or from the Label field', async () => {
   await call('new_drawing', { discardChanges: true })
   const drawBox = async (x: number, y: number) => {
-    // Focus the canvas (an empty spot), so the R shortcut reaches it.
-    await page.mouse.click(1150, 750)
+    // Focus the canvas (an empty spot left of the chat sidebar), so the R shortcut reaches it.
+    await page.mouse.click(880, 750)
     await page.keyboard.press('r')
     await page.mouse.move(x, y)
     await page.mouse.down()
@@ -282,6 +384,26 @@ test('an existing box takes a label from a double-click anywhere, or from the La
   await expect.poll(async () => (await sceneJson()).elements.some((e) => e.text === 'Corner')).toBe(false)
 })
 
+test('the library is saved, and comes back after the window reloads', async () => {
+  // The labelled box from the previous test: select it by its outline, add it.
+  await page.mouse.click(700, 320)
+  await page.mouse.click(700, 320, { button: 'right' })
+  await page.getByText('Add to library').click()
+  const stored = path.join(tmp, 'profile', 'library.excalidrawlib')
+  await expect.poll(() => existsSync(stored) && readFileSync(stored, 'utf8')).toContain('From the panelr')
+
+  // With a selection the library also shows an "add" tile; clear it first.
+  await page.mouse.click(880, 750)
+  await page.getByRole('tab').nth(1).click()
+  const units = page.locator('.library-unit')
+  await expect(units).toHaveCount(1)
+
+  await page.reload()
+  await page.waitForSelector('.excalidraw')
+  await page.getByRole('tab').nth(1).click()
+  await expect(units).toHaveCount(1)
+})
+
 test('settings open from the menu, and nothing hit the CSP', async () => {
   await sendCommand('settings')
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
@@ -299,4 +421,25 @@ test('settings open from the menu, and nothing hit the CSP', async () => {
   )
   expect(unexpected).toEqual([])
   console.log(`e2e artefacts in ${tmp}`)
+})
+
+// Last: it closes the window.
+test('untitled work autosaves to Documents/Tabula, and closing saves the last edit', async () => {
+  const dir = path.join(tmp, 'profile', 'Documents', 'Tabula')
+  const draftWith = (text: string) => () =>
+    existsSync(dir) &&
+    readdirSync(dir).some((f) => readFileSync(path.join(dir, f), 'utf8').includes(text))
+
+  await call('new_drawing', { discardChanges: true })
+  await call('add_elements', { elements: [{ type: 'text', x: 0, y: 0, text: 'Autosaved draft' }] })
+  await expect.poll(draftWith('Autosaved draft'), { timeout: 10_000 }).toBe(true)
+  await expect(page.locator('.titlebar-name')).toContainText('Untitled 20', { ignoreCase: true })
+
+  // Closed before autosave's pause is up: the close itself saves the edit.
+  await call('add_elements', { elements: [{ type: 'text', x: 0, y: 100, text: 'Saved on close' }] })
+  const edited = () =>
+    app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isDocumentEdited() ?? false)
+  await expect.poll(edited).toBe(true)
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await expect.poll(draftWith('Saved on close'), { timeout: 10_000 }).toBe(true)
 })

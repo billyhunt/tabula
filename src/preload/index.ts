@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   Channels,
   type AgentActivity,
+  type FlushResult,
   type AgentRequest,
   type AskEvent,
   type MenuCommand,
@@ -24,6 +25,15 @@ const api: TabulaApi = {
   openFile: () => ipcRenderer.invoke(Channels.openFile),
   saveFile: (path, contents) => ipcRenderer.invoke(Channels.saveFile, path, contents),
   pickSavePath: (suggestedName) => ipcRenderer.invoke(Channels.pickSavePath, suggestedName),
+  untitledPath: () => ipcRenderer.invoke(Channels.untitledPath),
+  onFlushRequest: (handler) =>
+    listen<void>(Channels.flushRequest, () => {
+      void handler().then(
+        (result) => ipcRenderer.send(Channels.flushDone, result),
+        (err: unknown) =>
+          ipcRenderer.send(Channels.flushDone, { ok: false, error: String(err) } satisfies FlushResult),
+      )
+    }),
   setDirty: (dirty) => ipcRenderer.send(Channels.setDirty, dirty),
   setTitle: (path) => ipcRenderer.send(Channels.setTitle, path),
   onMenuCommand: (handler) => listen<MenuCommand>(Channels.menuCommand, handler),
@@ -48,6 +58,14 @@ const api: TabulaApi = {
     read: (path, id) => ipcRenderer.invoke(Channels.versionsRead, path, id),
   },
 
+  library: {
+    load: () => ipcRenderer.invoke(Channels.libraryLoad),
+    save: (items) => ipcRenderer.invoke(Channels.librarySave, items),
+    onChanged: (handler) => listen<unknown[]>(Channels.libraryChanged, handler),
+    takeInstalls: () => ipcRenderer.invoke(Channels.libraryTakeInstalls),
+    onInstallReady: (handler) => listen<void>(Channels.libraryInstallReady, () => handler()),
+  },
+
   agent: {
     onRequest: (handler) => listen<AgentRequest>(Channels.agentRequest, handler),
     respond: (response) => ipcRenderer.send(Channels.agentResponse, response),
@@ -55,7 +73,10 @@ const api: TabulaApi = {
     status: () => ipcRenderer.invoke(Channels.agentStatus),
     setupCommand: () => ipcRenderer.invoke(Channels.agentSetupCommand),
     resetToken: () => ipcRenderer.invoke(Channels.agentResetToken),
+    setKey: (provider, key) => ipcRenderer.invoke(Channels.agentSetKey, provider, key),
+    models: () => ipcRenderer.invoke(Channels.agentModels),
     ask: (request) => ipcRenderer.invoke(Channels.agentAsk, request),
+    resetChat: () => ipcRenderer.invoke(Channels.agentAskReset),
     onAskEvent: (handler) => listen<AskEvent>(Channels.agentAskEvent, handler),
     cancel: (runId) => ipcRenderer.send(Channels.agentCancel, runId),
     textToDiagram: (runId, messages) =>

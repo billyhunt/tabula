@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import type { AgentStatus } from '../../shared/ipc'
+import { isProvider, keyProblem, PROVIDER_INFO, PROVIDERS, type Provider } from '../../shared/providers'
 import type { Settings, SettingsPatch } from '../../shared/settings'
 import { useMenuCommand } from '../menuCommands'
+import { ModelChecklist } from './ModelChecklist'
 import { remoteErrorMessage } from './remoteError'
 
 // The MCP server starts and stops in the background after a toggle, so its
@@ -9,24 +11,33 @@ import { remoteErrorMessage } from './remoteError'
 const STATUS_POLL_MS = 1000
 const NOTE_MS = 2500
 
-const OP_REF = /^op:\/\/[^/]+\/[^/]+\/.+/
-
-/** Open state for the Settings dialog; the menu's Settings… item opens it. */
+/**
+ * Open state for the Settings dialog; the menu's Settings… item opens it.
+ * `show({ askForKey: true })` opens it at the API key, saying one is needed.
+ */
 export const useSettingsDialog = () => {
-  const [open, setOpen] = useState(false)
-  useMenuCommand('settings', () => setOpen(true))
-  const show = useCallback(() => setOpen(true), [])
-  const close = useCallback(() => setOpen(false), [])
-  return { open, show, close }
+  const [state, setState] = useState<{ open: boolean; askForKey: boolean }>({
+    open: false,
+    askForKey: false,
+  })
+  useMenuCommand('settings', () => setState({ open: true, askForKey: false }))
+  const show = useCallback(
+    (options?: { askForKey?: boolean }) =>
+      setState({ open: true, askForKey: options?.askForKey ?? false }),
+    [],
+  )
+  const close = useCallback(() => setState({ open: false, askForKey: false }), [])
+  return { ...state, show, close }
 }
 
 interface SettingsDialogProps {
   open: boolean
+  askForKey: boolean
   close: () => void
 }
 
-export const SettingsDialog = ({ open, close }: SettingsDialogProps) =>
-  open ? <SettingsPanel close={close} /> : null
+export const SettingsDialog = ({ open, askForKey, close }: SettingsDialogProps) =>
+  open ? <SettingsPanel close={close} askForKey={askForKey} /> : null
 
 /** A short-lived confirmation line, e.g. "Copied". */
 const useNote = () => {
@@ -41,26 +52,24 @@ const useNote = () => {
   return [note, show] as const
 }
 
-const SettingsPanel = ({ close }: { close: () => void }) => {
+const SettingsPanel = ({ close, askForKey }: { close: () => void; askForKey: boolean }) => {
   const titleId = useId()
   const fieldId = useId()
   const panel = useRef<HTMLDivElement>(null)
+  const keyInput = useRef<HTMLInputElement>(null)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [status, setStatus] = useState<AgentStatus | null>(null)
   const [port, setPort] = useState('')
-  const [ref, setRef] = useState('')
-  const [model, setModel] = useState('')
-  const [errors, setErrors] = useState<{ port?: string; ref?: string; model?: string }>({})
+  const [keyDraft, setKeyDraft] = useState('')
+  const [errors, setErrors] = useState<{ port?: string; key?: string }>({})
   const [mcpNote, showMcpNote] = useNote()
-  const [claudeNote, showClaudeNote] = useNote()
+  const [aiNote, showAiNote] = useNote()
 
   // Drafts take the saved values on open and after each save here; other
   // changes (such as the menu's Autosave item) only refresh the toggles.
   const adopt = useCallback((next: Settings) => {
     setSettings(next)
     setPort(String(next.agent.mcpPort))
-    setRef(next.agent.apiKeyRef ?? '')
-    setModel(next.agent.model)
   }, [])
 
   useEffect(() => {
@@ -83,7 +92,12 @@ const SettingsPanel = ({ close }: { close: () => void }) => {
     }
   }, [])
 
-  useEffect(() => panel.current?.focus(), [])
+  // Sent here for a key: go straight to its field. The panel renders it once
+  // settings arrive, hence the dependency.
+  useEffect(() => {
+    if (askForKey) keyInput.current?.focus()
+    else panel.current?.focus()
+  }, [askForKey, settings !== null])
 
   const update = async (patch: SettingsPatch) => {
     adopt(await window.tabula.settings.update(patch))
@@ -100,29 +114,36 @@ const SettingsPanel = ({ close }: { close: () => void }) => {
     if (value !== settings?.agent.mcpPort) void update({ agent: { mcpPort: value } })
   }
 
-  const commitRef = () => {
-    const value = ref.trim()
-    if (value && !OP_REF.test(value)) {
-      setErrors((e) => ({ ...e, ref: 'A 1Password reference looks like op://vault/item/field.' }))
-      return
-    }
-    setErrors((e) => ({ ...e, ref: undefined }))
-    const next = value || null
-    if (next !== settings?.agent.apiKeyRef) {
-      void update({ agent: { apiKeyRef: next } }).then(() => showClaudeNote('Saved'))
+  const provider = settings?.agent.provider ?? 'anthropic'
+  const info = PROVIDER_INFO[provider]
+
+  const chooseProvider = (next: Provider) => {
+    setKeyDraft('')
+    setErrors((e) => ({ ...e, key: undefined }))
+    void update({ agent: { provider: next } })
+  }
+
+  const setKey = async (key: string | null, note: string) => {
+    try {
+      await window.tabula.agent.setKey(provider, key)
+      setKeyDraft('')
+      setStatus(await window.tabula.agent.status())
+      showAiNote(note)
+    } catch (err) {
+      showAiNote(`Couldn't save the key: ${remoteErrorMessage(err)}`)
     }
   }
 
-  const commitModel = () => {
-    const value = model.trim()
+  // Leaving an empty field changes nothing; a saved key is never shown.
+  const commitKey = () => {
+    const value = keyDraft.trim()
     if (!value) {
-      setErrors((e) => ({ ...e, model: 'Enter a model name, such as claude-sonnet-5-5.' }))
+      setErrors((e) => ({ ...e, key: undefined }))
       return
     }
-    setErrors((e) => ({ ...e, model: undefined }))
-    if (value !== settings?.agent.model) {
-      void update({ agent: { model: value } }).then(() => showClaudeNote('Saved'))
-    }
+    const problem = keyProblem(provider, value)
+    setErrors((e) => ({ ...e, key: problem ?? undefined }))
+    if (!problem) void setKey(value, 'Key saved')
   }
 
   const copySetup = async () => {
@@ -166,12 +187,13 @@ const SettingsPanel = ({ close }: { close: () => void }) => {
         ? `Listening at ${mcp.url}`
         : (mcp.error ?? 'Starting…')
 
+  const keySource = status?.keys[provider]
   const keyLine =
-    status?.keySource === 'env'
-      ? 'Using ANTHROPIC_API_KEY from the environment. It takes precedence over 1Password.'
-      : status?.keySource === '1password'
-        ? 'Read from 1Password the first time you ask, then kept in memory until Tabula quits.'
-        : 'Not set. Add a 1Password reference to use Ask and Text to diagram.'
+    keySource === 'env'
+      ? `Using ${info.envVar} from the environment. It takes precedence over a saved key.`
+      : keySource === 'saved'
+        ? 'A key is saved, encrypted with your Mac’s Keychain. Paste another to replace it.'
+        : `Not set. Paste your ${info.label} API key to use Ask and Text to diagram.`
 
   return (
     <div
@@ -207,7 +229,7 @@ const SettingsPanel = ({ close }: { close: () => void }) => {
                   checked={settings.autosave}
                   onChange={(e) => void update({ autosave: e.target.checked })}
                 />
-                Autosave drawings that have a file
+                Autosave drawings (ones never saved go to Documents/Tabula)
               </label>
             </section>
 
@@ -258,46 +280,66 @@ const SettingsPanel = ({ close }: { close: () => void }) => {
               </p>
             </section>
 
-            <section className="settings-section" aria-labelledby={`${fieldId}-claude`}>
-              <h3 id={`${fieldId}-claude`}>Claude</h3>
+            <section className="settings-section" aria-labelledby={`${fieldId}-ai`}>
+              <h3 id={`${fieldId}-ai`}>AI</h3>
+              {askForKey && !status?.keyConfigured && (
+                <p className="settings-ask" role="alert">
+                  Add your API key.
+                </p>
+              )}
+              <label className="settings-field">
+                <span>Provider</span>
+                <select
+                  value={provider}
+                  onChange={(e) => {
+                    if (isProvider(e.target.value)) chooseProvider(e.target.value)
+                  }}
+                >
+                  {PROVIDERS.map((p) => (
+                    <option key={p} value={p}>
+                      {PROVIDER_INFO[p].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <p className="settings-status">{status ? keyLine : ''}</p>
               <label className="settings-field">
-                <span>API key in 1Password</span>
+                <span>{info.label} API key</span>
                 <input
-                  type="text"
+                  ref={keyInput}
+                  type="password"
                   spellCheck={false}
                   autoComplete="off"
-                  placeholder="op://Private/Anthropic/credential"
-                  value={ref}
-                  onChange={(e) => setRef(e.target.value)}
-                  onBlur={commitRef}
-                  onKeyDown={commitOnEnter(commitRef)}
-                  aria-invalid={Boolean(errors.ref)}
-                  aria-describedby={`${fieldId}-ref-error`}
+                  placeholder={`${info.keyPrefix}…`}
+                  value={keyDraft}
+                  onChange={(e) => setKeyDraft(e.target.value)}
+                  onBlur={commitKey}
+                  onKeyDown={commitOnEnter(commitKey)}
+                  aria-invalid={Boolean(errors.key)}
+                  aria-describedby={`${fieldId}-key-error`}
                 />
               </label>
-              <p id={`${fieldId}-ref-error`} className="settings-error" hidden={!errors.ref}>
-                {errors.ref}
+              <p id={`${fieldId}-key-error`} className="settings-error" hidden={!errors.key}>
+                {errors.key}
               </p>
-              <label className="settings-field">
-                <span>Model</span>
-                <input
-                  type="text"
-                  spellCheck={false}
-                  autoComplete="off"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  onBlur={commitModel}
-                  onKeyDown={commitOnEnter(commitModel)}
-                  aria-invalid={Boolean(errors.model)}
-                  aria-describedby={`${fieldId}-model-error`}
-                />
-              </label>
-              <p id={`${fieldId}-model-error`} className="settings-error" hidden={!errors.model}>
-                {errors.model}
-              </p>
+              {keySource === 'saved' && (
+                <div className="settings-actions">
+                  <button
+                    type="button"
+                    className="agent-button"
+                    onClick={() => void setKey(null, 'Key removed')}
+                  >
+                    Remove saved key
+                  </button>
+                </div>
+              )}
+              <ModelChecklist
+                agent={settings.agent}
+                keyConfigured={Boolean(status?.keyConfigured)}
+                update={update}
+              />
               <p className="settings-note" role="status">
-                {claudeNote}
+                {aiNote}
               </p>
             </section>
           </>

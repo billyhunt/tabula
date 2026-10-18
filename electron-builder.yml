@@ -27,6 +27,11 @@ mac:
   # when a Developer ID certificate is available.
   identity: null
   darkModeSupport: true
+# tabula://library#addLibrary=… is how libraries.excalidraw.com hands a
+# library back after "Browse libraries" (see src/main/library.ts).
+protocols:
+  - name: Tabula
+    schemes: [tabula]
 fileAssociations:
   - ext: [excalidraw]
     name: Excalidraw Drawing

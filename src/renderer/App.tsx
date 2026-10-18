@@ -14,13 +14,15 @@ import type {
 } from '@excalidraw/excalidraw/types'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { OpenedFile } from '../shared/ipc'
-import { AskBar } from './agent/AskBar'
+import { ChatSidebar, useChat } from './agent/Chat'
 import { SettingsDialog, useSettingsDialog } from './agent/SettingsDialog'
 import { TextToDiagram } from './agent/TextToDiagram'
 import { useAgentActivity } from './agent/useAgentActivity'
 import { useCanvasTools } from './agent/useCanvasTools'
+import { DEFAULT_FONT_FAMILY } from './canvas/defaultFont'
 import { LabelField } from './canvas/LabelField'
 import { useEasyLabels } from './canvas/useEasyLabels'
+import { LIBRARY_RETURN_URL, useLibrary } from './library/useLibrary'
 import { Titlebar } from './components/Titlebar'
 import { useExports } from './export/useExports'
 import type { DocumentController } from './document'
@@ -35,12 +37,18 @@ import {
 import { useMermaidPaste } from './mermaid/useMermaidPaste'
 import { useMenuCommand } from './menuCommands'
 import { useSystemTheme } from './useSystemTheme'
-import { useAutosave } from './versions/useAutosave'
+import { useAutosave, useAutosaveEnabled } from './versions/useAutosave'
 import { VersionsDialog } from './versions/VersionsDialog'
 
 // Paper, matching Alethia. Excalidraw's dark mode inverts the canvas, which
 // turns this into a near-black ground.
 const PAPER = '#f2f0eb'
+
+// What a blank board starts with. Opened files keep their own font choice.
+const BLANK_APP_STATE = {
+  viewBackgroundColor: PAPER,
+  currentItemFontFamily: DEFAULT_FONT_FAMILY,
+}
 
 const basename = (p: string) => p.split('/').pop() ?? p
 
@@ -149,10 +157,10 @@ export const App = () => {
     [applyContents],
   )
 
-  const confirmDiscard = useCallback(
-    () => !dirty || window.confirm('Discard unsaved changes to this drawing?'),
-    [dirty],
-  )
+  const autosaveEnabled = useAutosaveEnabled()
+  // The file an untitled drawing autosaves to, chosen on its first autosave
+  // and kept until New, so saves racing to start share one file.
+  const untitledTarget = useRef<Promise<string> | null>(null)
 
   // Saves run one at a time, so an older write can never land after a newer
   // one (a manual save racing an autosave, say).
@@ -189,33 +197,59 @@ export const App = () => {
     [filePath, saveTo, saveAs],
   )
 
+  const flush = useCallback(async () => {
+    if (!api) return true
+    if (hashElementsVersion(api.getSceneElementsIncludingDeleted()) === savedHash.current) return true
+    if (!autosaveEnabled.current) return false
+    // A board never saved with nothing left on it (drawn, then deleted) isn't worth a file.
+    if (!filePath && api.getSceneElements().length === 0) return true
+    // The promise is shared, so saves racing to start pick the same file.
+    const target = filePath ?? (await (untitledTarget.current ??= window.tabula.untitledPath()))
+    await saveTo(target)
+    return true
+  }, [api, autosaveEnabled, filePath, saveTo])
+
+  /** Before the canvas is replaced: save the edits, or with autosave off, ask. */
+  const readyToReplace = useCallback(async () => {
+    try {
+      if (await flush()) return true
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      return window.confirm(`Couldn't save this drawing (${reason}). Discard its changes?`)
+    }
+    return window.confirm('Discard unsaved changes to this drawing?')
+  }, [flush])
+
   const open = useCallback(async () => {
-    if (!confirmDiscard()) return
+    if (!(await readyToReplace())) return
     const file = await window.tabula.openFile()
     if (file) await load(file)
-  }, [confirmDiscard, load])
+  }, [readyToReplace, load])
 
   const newDrawing = useCallback(
-    (options?: { force?: boolean }) => {
-      if (!api || (!options?.force && !confirmDiscard())) return
+    async (options?: { force?: boolean }) => {
+      if (!api || (!options?.force && !(await readyToReplace()))) return
+      // resetScene restores Excalidraw's defaults, which would close the chat.
+      const { openSidebar, defaultSidebarDockedPreference } = api.getAppState()
       api.resetScene()
-      api.updateScene({ appState: { viewBackgroundColor: PAPER } })
+      api.updateScene({ appState: { ...BLANK_APP_STATE, openSidebar, defaultSidebarDockedPreference } })
       api.history.clear()
       setFilePath(null)
+      untitledTarget.current = null
       envelope.current = newEnvelope()
       savedHash.current = hashElementsVersion([])
       setDirty(false)
     },
-    [api, confirmDiscard],
+    [api, readyToReplace],
   )
 
   /** Handed to features; rebuilt when the document changes. */
   const doc = useMemo<DocumentController>(
-    () => ({ filePath, dirty, load, restore, save, saveAs, saveTo, newDrawing, serialize }),
-    [filePath, dirty, load, restore, save, saveAs, saveTo, newDrawing, serialize],
+    () => ({ filePath, dirty, load, restore, save, saveAs, saveTo, flush, newDrawing, serialize }),
+    [filePath, dirty, load, restore, save, saveAs, saveTo, flush, newDrawing, serialize],
   )
 
-  useMenuCommand('new', () => newDrawing())
+  useMenuCommand('new', () => void newDrawing())
   useMenuCommand('open', () => void open())
   useMenuCommand('save', () => void save())
   useMenuCommand('save-as', () => void saveAs())
@@ -224,12 +258,14 @@ export const App = () => {
   )
 
   // Features hook in here.
-  useAutosave(doc, api)
+  useAutosave(doc, api, autosaveEnabled)
   useExports(api, doc)
   useCanvasTools(api, doc)
   useEasyLabels(api)
+  useLibrary(api)
   const onPaste = useMermaidPaste(api)
   const settingsDialog = useSettingsDialog()
+  const chat = useChat(api, settingsDialog.show)
   const agentLabel = useAgentActivity()
 
   const loadRef = useRef(load)
@@ -248,7 +284,10 @@ export const App = () => {
           theme={theme}
           onChange={onChange}
           onPaste={onPaste}
-          initialData={{ appState: { viewBackgroundColor: PAPER } }}
+          libraryReturnUrl={LIBRARY_RETURN_URL}
+          // The sidebar (where the chat lives) docks beside the canvas
+          // rather than covering it.
+          initialData={{ appState: { ...BLANK_APP_STATE, defaultSidebarDockedPreference: true } }}
           UIOptions={{
             canvasActions: { loadScene: false, saveToActiveFile: false, toggleTheme: false },
           }}
@@ -286,12 +325,16 @@ export const App = () => {
             <WelcomeScreen.Hints.HelpHint />
           </WelcomeScreen>
           <TextToDiagram api={api} />
+          <ChatSidebar chat={chat} />
         </Excalidraw>
-        <AskBar api={api} onOpenSettings={settingsDialog.show} />
         <LabelField api={api} />
       </main>
       <VersionsDialog doc={doc} />
-      <SettingsDialog open={settingsDialog.open} close={settingsDialog.close} />
+      <SettingsDialog
+        open={settingsDialog.open}
+        askForKey={settingsDialog.askForKey}
+        close={settingsDialog.close}
+      />
     </div>
   )
 }
