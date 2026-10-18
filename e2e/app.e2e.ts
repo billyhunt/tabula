@@ -138,15 +138,16 @@ test('the editor loads its bundled fonts and edits text inside a shape', async (
     )
     .toBe(true)
 
-  // An empty spot left of the chat sidebar.
-  await page.mouse.click(880, 700)
+  // An empty spot left of the chat sidebar. Everything the tests click stays
+  // above y = 650: CI screens are 677px tall.
+  await page.mouse.click(880, 600)
   await page.keyboard.press('r')
-  await page.mouse.move(250, 450)
+  await page.mouse.move(250, 330)
   await page.mouse.down()
-  await page.mouse.move(450, 600, { steps: 8 })
+  await page.mouse.move(450, 480, { steps: 8 })
   await page.mouse.up()
   await page.keyboard.press('Escape')
-  await page.mouse.dblclick(350, 525)
+  await page.mouse.dblclick(350, 405)
   const editor = page.locator('textarea.excalidraw-wysiwyg')
   await expect(editor).toBeVisible()
   await page.keyboard.type('Hello box')
@@ -163,7 +164,7 @@ test('the editor loads its bundled fonts and edits text inside a shape', async (
   const offCentre = async () => {
     const box = await editor.boundingBox()
     if (!box) return Infinity
-    return Math.max(Math.abs(box.y + box.height / 2 - 525), Math.abs(box.x + box.width / 2 - 350))
+    return Math.max(Math.abs(box.y + box.height / 2 - 405), Math.abs(box.x + box.width / 2 - 350))
   }
   await expect.poll(offCentre).toBeLessThan(6)
   await page.keyboard.press('Escape')
@@ -428,7 +429,7 @@ test('an existing box takes a label from a double-click anywhere, or from the La
   await call('new_drawing', { discardChanges: true })
   const drawBox = async (x: number, y: number) => {
     // Focus the canvas (an empty spot left of the chat sidebar), so the R shortcut reaches it.
-    await page.mouse.click(880, 750)
+    await page.mouse.click(880, 600)
     await page.keyboard.press('r')
     await page.mouse.move(x, y)
     await page.mouse.down()
@@ -477,7 +478,7 @@ test('the library is saved, and comes back after the window reloads', async () =
   await expect.poll(() => existsSync(stored) && readFileSync(stored, 'utf8')).toContain('From the panelr')
 
   // With a selection the library also shows an "add" tile; clear it first.
-  await page.mouse.click(880, 750)
+  await page.mouse.click(880, 600)
   await page.getByRole('tab').nth(1).click()
   const units = page.locator('.library-unit')
   await expect(units).toHaveCount(1)
