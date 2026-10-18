@@ -33,8 +33,8 @@ const PROMPT = 'Sketch how a photo gets from upload to the gallery, with a quali
 
 const FLOW = [
   'flowchart LR',
-  '  upload[Upload photo] --> check{OK?}',
-  '  check -->|sharp| tag[Auto-tag with AI]',
+  '  upload[Upload photo] --> check{Sharp enough?}',
+  '  check -->|yes| tag[Auto-tag with AI]',
   '  check -->|blurry| retake[Ask for a retake]',
   '  retake --> upload',
   '  tag --> store[(Cloud storage)]',
