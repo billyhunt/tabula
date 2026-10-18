@@ -238,6 +238,50 @@ test('Text to diagram streams Mermaid from Claude', async () => {
   expect(mermaid).toContain('A[Start] --> B[End]')
 })
 
+test('an existing box takes a label from a double-click anywhere, or from the Label field', async () => {
+  await call('new_drawing', { discardChanges: true })
+  const drawBox = async (x: number, y: number) => {
+    // Focus the canvas (an empty spot), so the R shortcut reaches it.
+    await page.mouse.click(1150, 750)
+    await page.keyboard.press('r')
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 240, y + 140, { steps: 6 })
+    await page.mouse.up()
+    await page.keyboard.press('Escape')
+  }
+  const labelOf = async (text: string) =>
+    (await sceneJson()).elements.find((e) => e.type === 'rectangle' && e.label === text)
+
+  // Near a corner, nowhere near the centre: Excalidraw alone would drop
+  // loose text here.
+  await drawBox(400, 250)
+  await page.mouse.dblclick(420, 265)
+  await expect(page.locator('textarea.excalidraw-wysiwyg')).toBeVisible()
+  await page.keyboard.type('Corner')
+  await page.keyboard.press('Escape')
+  await expect.poll(() => labelOf('Corner')).toBeTruthy()
+
+  // The Label field: select a box by its outline, type, press Return.
+  await drawBox(700, 250)
+  await page.mouse.click(700, 320)
+  const field = page.locator('.tabula-label-input')
+  await expect(field).toBeVisible()
+  await expect(field).toHaveValue('')
+  await field.fill('From the panel')
+  await field.press('r') // a canvas shortcut, typed as text here
+  await field.press('Enter')
+  await expect.poll(() => labelOf('From the panelr')).toBeTruthy()
+  await page.screenshot({ path: path.join(tmp, 'labels.png') })
+
+  // The field shows an existing label, and emptying it removes the label.
+  await page.mouse.click(400, 320)
+  await expect(field).toHaveValue('Corner')
+  await field.fill('')
+  await field.press('Enter')
+  await expect.poll(async () => (await sceneJson()).elements.some((e) => e.text === 'Corner')).toBe(false)
+})
+
 test('settings open from the menu, and nothing hit the CSP', async () => {
   await sendCommand('settings')
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()

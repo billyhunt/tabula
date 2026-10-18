@@ -124,3 +124,42 @@
   font-family: var(--font-display);
   color: var(--text);
 }
+
+/* Tabula's Label field, first in the properties panel. */
+.canvas .excalidraw .tabula-label {
+  margin: 0 0 0.5rem;
+}
+
+.canvas .excalidraw .tabula-label legend label {
+  font: inherit;
+  cursor: text;
+}
+
+.canvas .excalidraw .tabula-label-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.4rem 0.5rem;
+  font-family: var(--font-prose);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  resize: vertical;
+}
+
+.canvas .excalidraw .tabula-label-input:focus {
+  outline: none;
+  border-color: var(--accent-hot);
+}
+
+.canvas .excalidraw .tabula-label-hint {
+  margin: 0.3rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}

@@ -19,6 +19,8 @@ import { SettingsDialog, useSettingsDialog } from './agent/SettingsDialog'
 import { TextToDiagram } from './agent/TextToDiagram'
 import { useAgentActivity } from './agent/useAgentActivity'
 import { useCanvasTools } from './agent/useCanvasTools'
+import { LabelField } from './canvas/LabelField'
+import { useEasyLabels } from './canvas/useEasyLabels'
 import { Titlebar } from './components/Titlebar'
 import { useExports } from './export/useExports'
 import type { DocumentController } from './document'
@@ -225,6 +227,7 @@ export const App = () => {
   useAutosave(doc, api)
   useExports(api, doc)
   useCanvasTools(api, doc)
+  useEasyLabels(api)
   const onPaste = useMermaidPaste(api)
   const settingsDialog = useSettingsDialog()
   const agentLabel = useAgentActivity()
@@ -285,6 +288,7 @@ export const App = () => {
           <TextToDiagram api={api} />
         </Excalidraw>
         <AskBar api={api} onOpenSettings={settingsDialog.show} />
+        <LabelField api={api} />
       </main>
       <VersionsDialog doc={doc} />
       <SettingsDialog open={settingsDialog.open} close={settingsDialog.close} />
