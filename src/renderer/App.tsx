@@ -133,7 +133,8 @@ export const App = () => {
       })
       if (scene.files) api.addFiles(Object.values(scene.files))
       if (scene.elements.length) {
-        api.setViewport({ target: api.getSceneElements(), fit: 'scale-down' })
+        // Fit inside the area the toolbar, panels and docked chat leave free.
+        api.setViewport({ target: api.getSceneElements(), fit: 'scale-down', offsets: { ui: true } })
       }
     },
     [api, theme],

@@ -41,10 +41,18 @@ export const revealElements = (
 ) => {
   if (!elements.length) return
   const bounds = getCommonBounds(elements)
-  const [left, top, right, bottom] = getVisibleSceneBounds(api.getAppState())
+  const state = api.getAppState()
+  const [left, top, right, bottom] = getVisibleSceneBounds(state)
+  // The part of the canvas the toolbar, panels and docked chat don't cover,
+  // in scene units.
+  const inset = api.getViewportOffsets()
+  const zoom = state.zoom.value
   const inView =
-    bounds[0] >= left && bounds[1] >= top && bounds[2] <= right && bounds[3] <= bottom
-  if (!inView) api.setViewport({ target: bounds, fit: 'scale-down', animation: true })
+    bounds[0] >= left + (inset.left ?? 0) / zoom &&
+    bounds[1] >= top + (inset.top ?? 0) / zoom &&
+    bounds[2] <= right - (inset.right ?? 0) / zoom &&
+    bounds[3] <= bottom - (inset.bottom ?? 0) / zoom
+  if (!inView) api.setViewport({ target: bounds, fit: 'scale-down', animation: true, offsets: { ui: true } })
 }
 
 /** What to select so the user sees `elements`: labels select through their shape. */

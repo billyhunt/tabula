@@ -98,7 +98,14 @@ const buildHandlers = (
       const { ids } = parseToolArgs('zoom_to_fit', zoomToFitInput, args)
       const elements = ids ? liveElements(ids) : api.getSceneElements()
       if (!elements.length) throw new Error('The drawing is empty')
-      api.setViewport({ target: getCommonBounds(elements), fit: 'scale-down', animation: true })
+      // `ui` offsets keep the result clear of the toolbar, panels and the
+      // docked chat, which otherwise cover the edges of the "fitted" drawing.
+      api.setViewport({
+        target: getCommonBounds(elements),
+        fit: 'scale-down',
+        animation: true,
+        offsets: { ui: true },
+      })
       return { text: `Zoomed to fit ${elements.length} element${elements.length === 1 ? '' : 's'}` }
     },
 

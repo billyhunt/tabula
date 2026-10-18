@@ -1,7 +1,16 @@
 # Tabula
 
-A whiteboard for macOS, built on [Excalidraw](https://github.com/excalidraw/excalidraw)
-and saving straight into your Obsidian vault.
+An AI-enabled whiteboard for macOS, built on
+[Excalidraw](https://github.com/excalidraw/excalidraw) and saving straight into
+your Obsidian vault. Ask Claude to sketch, tidy or explain the board in a chat
+beside the canvas, or let Claude Code draw on it over MCP.
+
+![Tabula's chat: asked to sketch how a photo gets from upload to the gallery, Claude reads the empty board, imports a Mermaid flowchart that becomes editable shapes, and fits it in view.](docs/demo.gif)
+
+*The chat drawing on the board. For a repeatable recording, the model's reply
+is scripted ([`scripts/record-demo.mjs`](scripts/record-demo.mjs)); the tool
+calls, the Mermaid conversion and the drawing are Tabula running as it does
+with a live model.*
 
 Tabula wraps the full Excalidraw editor in a native Mac app. Every tool and
 shortcut works as it does on excalidraw.com. Drawings save as Obsidian
@@ -30,43 +39,58 @@ open it in Tabula, or in Obsidian with the Excalidraw plugin.*
 Early alpha. It runs from source on Apple-silicon Macs; there is no signed
 release yet.
 
-Working now:
+### AI
 
-- The full Excalidraw editor, with excalidraw.com's tools and shortcuts
-- Open and save `.excalidraw.md` (Obsidian Excalidraw plugin) and `.excalidraw`
-- Light and dark mode, following macOS
-- Works offline: all fonts are bundled. New text, including text that Ask,
-  agents and Mermaid import add, is in Comic Shanns rather than Excalidraw's
-  hand-drawn Excalifont
-- Export to PNG, SVG, PDF (one page per frame, if you like) and Mermaid, or
-  copy as PNG, SVG or Mermaid; exports cover the selection when there is one
-- Mermaid import: File ▸ Import Mermaid…, or paste a Mermaid diagram onto the
-  canvas (⇧⌘V pastes it as text)
-- A built-in MCP server, so AI agents such as Claude Code can draw on the open
-  board (see [Connecting an agent](#connecting-an-agent))
-- **Chat**: the first tab of the sidebar, beside search and the library,
-  docked to the right and open by default (the top-right button and ⌘J open
-  it; View ▸ Show Chat turns it off). Tell Claude what to draw
-  or change and watch it work on the board, then follow up ("make it bigger",
-  "now connect those"): it remembers the conversation until **New chat**.
-  With a selection it works on just that ("tidy this up", "turn these notes
-  into a flowchart"). Each change is one undo step. The model button beside
-  the box switches between the models you picked in Settings.
-- **Library**: shapes you add to Excalidraw's library are kept (in Tabula's
-  app data) for every window and across restarts. "Browse libraries" opens
-  libraries.excalidraw.com, and its **Add to Excalidraw** button hands the
-  library back to Tabula through a `tabula://` link; Tabula downloads it
-  (only from excalidraw.com hosts) and asks before adding it
+- **Chat** (the first tab of the sidebar, docked on the right and open by
+  default; ⌘J focuses it, View ▸ Show Chat turns it off). Tell Claude what to
+  draw or change and watch it work on the board, then follow up ("make it
+  bigger", "now connect those"): it remembers the conversation until **New
+  chat**.
+  - With a selection it works on just that ("tidy this up", "turn these notes
+    into a flowchart").
+  - Each change Claude makes is one undo step, and the title bar shows what
+    it is doing.
+  - The model button beside the box switches between the models you picked in
+    Settings (see [AI settings](#ai-settings)).
+  - Select and copy any of the conversation, or use **Copy** (the whole chat as
+    Markdown) and **Save…** (a `.md` file, suggested next to the drawing as
+    `<drawing> chat.md`).
 - **Text to diagram** (Agent ▸ Text to Diagram…): describe a diagram, preview
-  the Mermaid Claude writes, then insert it
-- Autosave for everything: a drawing is saved a moment after you stop
-  editing and again before its window closes or the app quits. One that
-  was never saved gets its own file, `Documents/Tabula/Untitled <date>
-  <time>.excalidraw.md`, with no dialog; Save As moves it wherever you like
-  (the autosaved copy stays where it was). New and Open save the current
-  drawing instead of asking, and so do agents' new and open commands. A
-  version history (File ▸ Browse Versions…) keeps what every save replaced,
-  with a preview and restore
+  the Mermaid Claude writes, then insert it as editable shapes.
+- **Agents over MCP**: a built-in MCP server lets Claude Code, or any MCP
+  client, read and draw on the open board with the same tools the chat uses
+  (see [Connecting an agent](#connecting-an-agent)).
+
+### Drawing and files
+
+- The full Excalidraw editor, with excalidraw.com's tools and shortcuts.
+- Typing into a shape: double-click anywhere inside it, not just near the
+  centre, or select it and type in the **Label** field at the top of the
+  left panel. ⌥ double-click still drops loose text.
+- Open and save `.excalidraw.md` (Obsidian Excalidraw plugin) and
+  `.excalidraw`.
+- Autosave for everything: a drawing is saved a moment after you stop editing
+  and again before its window closes or the app quits.
+  - One that was never saved gets its own file,
+    `Documents/Tabula/Untitled <date> <time>.excalidraw.md`, with no dialog.
+    ⌘S on it asks for a name and moves it there.
+  - New and Open save the current drawing instead of asking, and so do agents'
+    new and open commands.
+  - A version history (File ▸ Browse Versions…) keeps what every save
+    replaced, with a preview and restore.
+- Export to PNG, SVG, PDF (one page per frame, if you like) and Mermaid, or
+  copy as PNG, SVG or Mermaid; exports cover the selection when there is one.
+- Mermaid import: File ▸ Import Mermaid…, or paste a Mermaid diagram onto the
+  canvas (⇧⌘V pastes it as text).
+- **Library**: shapes you add to Excalidraw's library are kept for every
+  window and across restarts. "Browse libraries" opens
+  libraries.excalidraw.com, whose **Add to Excalidraw** button hands the
+  library back to Tabula through a `tabula://` link; Tabula downloads it (only
+  from excalidraw.com hosts) and asks before adding it.
+- Light and dark mode, following macOS.
+- Works offline: all fonts are bundled. New text, including text the chat,
+  agents and Mermaid import add, is in Comic Shanns rather than Excalidraw's
+  hand-drawn Excalifont.
 
 ## AI settings
 
@@ -99,6 +123,7 @@ npm test          # unit tests
 npm run test:e2e  # builds, then drives the app with Playwright
 npm run package   # unsigned Apple-silicon .app in release/mac-arm64/, then opens it
 npm run open      # opens the newest packaged build, quitting any older copy
+npm run demo      # builds, then re-records docs/demo.gif
 ```
 
 `npm run open` picks whichever of `release/` and `release-next/` (test
@@ -120,9 +145,10 @@ claude mcp add --transport http tabula http://127.0.0.1:7337/mcp --header "Autho
 
 The server listens on 127.0.0.1 only, needs that token (kept in Tabula's
 app-support folder; Settings can replace it), and refuses requests from web
-pages. Agents get the same tools as Ask — read the drawing, add,
+pages. Agents get the same tools as the chat — read the drawing, add,
 change and delete elements, import Mermaid, select, zoom, screenshot — plus
-export, open, save and new drawing. Every change is one undo step.
+export, open, save and new drawing. Every change is one undo step, and agent
+saves never open a dialog.
 
 ## File format
 
@@ -146,15 +172,16 @@ To edit the same drawings in Obsidian, install the Excalidraw plugin there.
 | Directory | Runs in | Purpose |
 |---|---|---|
 | `src/main/` | Electron main | Window, menus, file dialogs, file I/O, version history, PDF printing |
-| `src/main/agent/` | Electron main | MCP server, model calls and chat history (Ask, Text to diagram), API keys |
+| `src/main/agent/` | Electron main | MCP server, model calls and chat history (chat, Text to diagram), API keys |
 | `src/preload/` | Preload (sandboxed) | The only bridge between page and main |
 | `src/renderer/` | Chromium | React shell around the Excalidraw editor |
-| `src/renderer/agent/` | Chromium | Canvas tools agents call, Ask chat, Settings |
+| `src/renderer/agent/` | Chromium | Canvas tools agents call, the chat, Settings |
+| `src/renderer/canvas/` | Chromium | Placing elements, double-click labelling, the Label field |
 | `src/renderer/export/`, `mermaid/` | Chromium | Exports, Mermaid writer and import |
 | `src/renderer/format/` | Chromium | `.excalidraw.md` reader and writer |
 | `src/shared/` | Both | IPC channels and types, the canvas tool schemas |
 
-The scene lives in the page, so both the MCP server and Ask reach it
+The scene lives in the page, so both the MCP server and the chat reach it
 the same way: main validates a tool call and forwards it to the window, which
 runs it against the editor. Paths and file writes stay in main. The packaged
 app serves the page from an `app://tabula/` origin rather than `file://`, so
