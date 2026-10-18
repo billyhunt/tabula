@@ -5,6 +5,7 @@ import type { AgentStatus, AskEvent } from '../../shared/ipc'
 import type { Settings } from '../../shared/settings'
 import { useMenuCommand } from '../menuCommands'
 import { ModelPicker } from './ModelPicker'
+import { chatMarkdown } from './chatTranscript'
 import { remoteErrorMessage } from './remoteError'
 
 /** The chat lives as a tab of Excalidraw's sidebar, beside search and the library. */
@@ -16,7 +17,7 @@ const isChatOpen = (sidebar: AppState['openSidebar']) =>
 type Step = { kind: 'text'; text: string } | { kind: 'tool'; summary: string }
 
 /** One exchange in the chat: the user's message and what Claude did with it. */
-interface Run {
+export interface Run {
   prompt: string
   steps: Step[]
   state: 'running' | 'done' | 'error' | 'stopped'
@@ -70,6 +71,10 @@ export interface ChatState {
   submit: () => Promise<void>
   stop: () => void
   newChat: () => Promise<void>
+  /** Copies the conversation as Markdown. */
+  copyChat: () => Promise<void>
+  /** Saves the conversation as a Markdown file, next to the drawing by default. */
+  saveChat: () => Promise<void>
   onOpenSettings: OpenSettings
 }
 
@@ -85,6 +90,8 @@ export interface ChatState {
 export const useChat = (
   api: ExcalidrawImperativeAPI | null,
   onOpenSettings: OpenSettings,
+  /** The open drawing's file, for naming a saved chat. */
+  drawingPath: string | null,
 ): ChatState => {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [status, setStatus] = useState<AgentStatus | null>(null)
@@ -229,6 +236,33 @@ export const useChat = (
     }
   }
 
+  const transcript = () => chatMarkdown(runs, drawingPath && drawingTitle(drawingPath))
+
+  const copyChat = async () => {
+    await window.tabula.exports.copyText(transcript())
+    api?.setToast({ message: 'Copied the chat as Markdown', duration: 2000, closable: false })
+  }
+
+  // Next to the drawing, so the two stay together; untitled boards suggest
+  // a plain name in the last save folder.
+  const saveChat = async () => {
+    const name = `${drawingPath ? drawingTitle(drawingPath) : 'Untitled'} chat.md`
+    const folder =
+      drawingPath && !(await window.tabula.isUntitledPath(drawingPath))
+        ? drawingPath.slice(0, drawingPath.lastIndexOf('/') + 1)
+        : ''
+    try {
+      const saved = await window.tabula.exports.save({
+        format: 'markdown',
+        suggestedName: folder + name,
+        data: transcript(),
+      })
+      if (saved) api?.setToast({ message: `Saved ${saved.split('/').pop()}`, duration: 2500, closable: false })
+    } catch (err) {
+      api?.setToast({ message: `Couldn't save the chat: ${remoteErrorMessage(err)}`, closable: true })
+    }
+  }
+
   return {
     settings,
     keyConfigured: status?.keyConfigured ?? null,
@@ -241,9 +275,15 @@ export const useChat = (
     submit,
     stop,
     newChat,
+    copyChat,
+    saveChat,
     onOpenSettings,
   }
 }
+
+/** "Board" for …/Board.excalidraw.md. */
+const drawingTitle = (drawingPath: string) =>
+  (drawingPath.split('/').pop() ?? drawingPath).replace(/(\.excalidraw\.md|\.excalidraw|\.md)$/i, '')
 
 const chatIcon = (
   <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.25" aria-hidden="true">
@@ -262,9 +302,37 @@ const ChatPanel = ({ chat }: { chat: ChatState }) => {
     input.current?.focus()
   }, [chat.focusRequest])
 
+  // Follow the reply as it streams only while the reader is at the bottom;
+  // scrolling up to reread must not be yanked back on every new word. A new
+  // message always comes into view.
+  const pinned = useRef(true)
+  const runCount = useRef(runs.length)
   useEffect(() => {
-    log.current?.scrollTo({ top: log.current.scrollHeight })
+    const el = log.current
+    if (!el) return
+    if (runs.length !== runCount.current) {
+      runCount.current = runs.length
+      pinned.current = true
+    }
+    if (pinned.current) el.scrollTo({ top: el.scrollHeight })
   }, [runs])
+  const onLogScroll = () => {
+    const el = log.current
+    if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+  }
+
+  // Excalidraw answers every copy on the page with the selected shapes, even
+  // when the selection is text here. Text selected in the conversation must
+  // copy as text, so its copy never reaches Excalidraw's document listener.
+  useEffect(() => {
+    const keepTextCopy = (event: ClipboardEvent) => {
+      const selection = getSelection()
+      const node = selection && !selection.isCollapsed ? selection.anchorNode : null
+      if (node && log.current?.contains(node)) event.stopPropagation()
+    }
+    window.addEventListener('copy', keepTextCopy, true)
+    return () => window.removeEventListener('copy', keepTextCopy, true)
+  }, [])
 
   const onKeyDown = (event: KeyboardEvent) => {
     // Typing here must not trigger Excalidraw's single-key shortcuts.
@@ -290,13 +358,21 @@ const ChatPanel = ({ chat }: { chat: ChatState }) => {
 
   return (
     <section className="chat" aria-label="Chat" onKeyDown={onKeyDown} onKeyUp={(e) => e.stopPropagation()}>
-      <div className="chat-log" ref={log} aria-live="polite">
+      <div className="chat-log" ref={log} aria-live="polite" onScroll={onLogScroll}>
         {runs.length === 0 ? (
           <p className="chat-empty">Ask Claude to draw, tidy or explain the board.</p>
         ) : (
-          <button type="button" className="chat-new" onClick={() => void chat.newChat()}>
-            New chat
-          </button>
+          <div className="chat-actions">
+            <button type="button" className="chat-new" onClick={() => void chat.copyChat()}>
+              Copy
+            </button>
+            <button type="button" className="chat-new" onClick={() => void chat.saveChat()}>
+              Save…
+            </button>
+            <button type="button" className="chat-new" onClick={() => void chat.newChat()}>
+              New chat
+            </button>
+          </div>
         )}
         {runs.map((run, i) => (
           <div key={i} className="ask-run">

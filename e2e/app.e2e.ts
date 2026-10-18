@@ -34,6 +34,20 @@ const sendCommand = (cmd: string) =>
     BrowserWindow.getAllWindows()[0].webContents.send('menu:command', command)
   }, cmd)
 
+/** Makes main's Save dialog answer `filePath` without showing, counting calls. */
+const stubSaveDialog = (filePath: string) =>
+  app.evaluate(({ dialog }, answer) => {
+    Reflect.set(globalThis, 'saveDialogCalls', 0)
+    dialog.showSaveDialog = (async () => {
+      Reflect.set(globalThis, 'saveDialogCalls', Number(Reflect.get(globalThis, 'saveDialogCalls')) + 1)
+      return { canceled: false, filePath: answer }
+    }) as typeof dialog.showSaveDialog
+  }, filePath)
+
+const saveDialogCalls = () => app.evaluate(() => Number(Reflect.get(globalThis, 'saveDialogCalls')))
+
+const clipboardText = () => app.evaluate(({ clipboard }) => clipboard.readText())
+
 interface ToolContent {
   type: string
   text?: string
@@ -312,6 +326,46 @@ test('Text to diagram streams Mermaid from Claude', async () => {
   expect(mermaid).toContain('A[Start] --> B[End]')
 })
 
+test('a long conversation scrolls, and its text can be copied or saved', async () => {
+  await sendCommand('ask')
+  const input = page.locator('.ask-input')
+  await expect(input).toBeVisible()
+  const long = Array.from({ length: 120 }, (_, i) => `Line ${i + 1} of a long message`).join('\n')
+  await input.fill(long)
+  await input.press('Enter')
+  await expect(page.locator('.ask-run').last()).toContainText('Done.')
+
+  // The conversation scrolls inside the sidebar; the message box stays on screen.
+  const chatLog = page.locator('.chat-log')
+  const sizes = await chatLog.evaluate((el) => ({ content: el.scrollHeight, shown: el.clientHeight }))
+  expect(sizes.content).toBeGreaterThan(sizes.shown)
+  const composer = await page.locator('.chat-composer').boundingBox()
+  const windowHeight = await page.evaluate(() => innerHeight)
+  expect(composer).not.toBeNull()
+  expect(composer!.y + composer!.height).toBeLessThanOrEqual(windowHeight)
+
+  // Text selected in the conversation copies as text, not as Excalidraw shapes.
+  await expect(chatLog).toHaveCSS('user-select', 'text')
+  await page.locator('.ask-prompt').last().evaluate((el) => {
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    getSelection()?.removeAllRanges()
+    getSelection()?.addRange(range)
+  })
+  await page.keyboard.press('Meta+C')
+  await expect.poll(clipboardText).toContain('Line 120 of a long message')
+
+  // Copy and Save… hand over the whole conversation as Markdown.
+  await page.getByRole('button', { name: 'Copy', exact: true }).click()
+  await expect.poll(clipboardText).toContain('## You')
+  expect(await clipboardText()).toContain('## Claude')
+  const saved = path.join(tmp, 'chat.md')
+  await stubSaveDialog(saved)
+  await page.getByRole('button', { name: 'Save…' }).click()
+  await expect.poll(() => existsSync(saved) && readFileSync(saved, 'utf8')).toContain('Line 1 of a long message')
+  expect(readFileSync(saved, 'utf8')).toMatch(/^# Chat/)
+})
+
 test("text from every source uses Tabula's font, including Excalidraw's Mermaid dialog", async () => {
   await sendCommand('import-mermaid')
   const dialog = page.locator('.ttd-dialog')
@@ -428,6 +482,30 @@ test('settings open from the menu, and nothing hit the CSP', async () => {
   )
   expect(unexpected).toEqual([])
   console.log(`e2e artefacts in ${tmp}`)
+})
+
+test('Save asks for a name for an untitled autosave, moves it there, then saves in place', async () => {
+  const dir = path.join(tmp, 'profile', 'Documents', 'Tabula')
+  await call('new_drawing', { discardChanges: true })
+  await call('add_elements', { elements: [{ type: 'text', x: 0, y: 0, text: 'Needs a name' }] })
+  await expect(page.locator('.titlebar-name')).toContainText('Untitled 20', { ignoreCase: true, timeout: 10_000 })
+  const untitled = readdirSync(dir).filter((f) => readFileSync(path.join(dir, f), 'utf8').includes('Needs a name'))
+  expect(untitled).toHaveLength(1)
+
+  const named = path.join(tmp, 'Named board.excalidraw.md')
+  await stubSaveDialog(named)
+  await sendCommand('save')
+  await expect.poll(() => existsSync(named) && readFileSync(named, 'utf8')).toContain('Needs a name')
+  await expect(page.locator('.titlebar-name')).toContainText('Named board', { ignoreCase: true })
+  expect(await saveDialogCalls()).toBe(1)
+  // Moved, not copied: the timestamped autosave file is gone.
+  expect(existsSync(path.join(dir, untitled[0]))).toBe(false)
+
+  // Named now: Save writes in place without asking again.
+  await call('add_elements', { elements: [{ type: 'text', x: 0, y: 100, text: 'Saved in place' }] })
+  await sendCommand('save')
+  await expect.poll(() => readFileSync(named, 'utf8')).toContain('Saved in place')
+  expect(await saveDialogCalls()).toBe(1)
 })
 
 // Last: it closes the window.

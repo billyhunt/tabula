@@ -19,19 +19,25 @@ const FILTERS: Record<ExportFormat | 'pdf', FileFilter> = {
   png: { name: 'PNG Image', extensions: ['png'] },
   svg: { name: 'SVG Image', extensions: ['svg'] },
   mermaid: { name: 'Mermaid Diagram', extensions: ['mmd'] },
+  markdown: { name: 'Markdown', extensions: ['md'] },
   pdf: { name: 'PDF Document', extensions: ['pdf'] },
 }
 
-// A bare file name: the renderer suggests names, it doesn't choose folders.
+// Only ever the Save dialog's starting point, which the user confirms: a
+// file name, or an absolute path when the renderer suggests a folder (a saved
+// chat goes next to its drawing).
 const suggestedName = z
   .string()
   .min(1)
-  .max(255)
-  .refine((name) => !name.includes('/') && !name.includes('\\'), 'Expected a file name')
+  .max(1024)
+  .refine(
+    (name) => name.startsWith('/') || (!name.includes('/') && !name.includes('\\')),
+    'Expected a file name or an absolute path',
+  )
 
 const exportSaveRequest = z.discriminatedUnion('format', [
   z.object({ format: z.literal('png'), suggestedName, data: z.instanceof(Uint8Array) }),
-  z.object({ format: z.enum(['svg', 'mermaid']), suggestedName, data: z.string() }),
+  z.object({ format: z.enum(['svg', 'mermaid', 'markdown']), suggestedName, data: z.string() }),
 ])
 
 const pdfPage = z.object({

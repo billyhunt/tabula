@@ -189,11 +189,20 @@ export const App = () => {
 
   const saveAs = useCallback(async () => {
     const target = await window.tabula.pickSavePath(filePath ?? NEW_FILE_NAME)
-    return target ? saveTo(target) : null
+    if (!target) return null
+    const previous = filePath
+    const saved = await saveTo(target)
+    // Naming an untitled autosave moves it: the timestamped file it was
+    // autosaving to goes, rather than lingering as a duplicate.
+    if (previous && previous !== saved) await window.tabula.retireUntitled(previous)
+    untitledTarget.current = null
+    return saved
   }, [filePath, saveTo])
 
+  // Save on a drawing that only has an autosave name asks for a real one.
   const save = useCallback(
-    () => (filePath ? saveTo(filePath) : saveAs()),
+    async () =>
+      filePath && !(await window.tabula.isUntitledPath(filePath)) ? saveTo(filePath) : saveAs(),
     [filePath, saveTo, saveAs],
   )
 
@@ -274,7 +283,7 @@ export const App = () => {
   useLibrary(api)
   const onPaste = useMermaidPaste(api)
   const settingsDialog = useSettingsDialog()
-  const chat = useChat(api, settingsDialog.show)
+  const chat = useChat(api, settingsDialog.show, filePath)
   const agentLabel = useAgentActivity()
 
   const loadRef = useRef(load)

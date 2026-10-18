@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Channels, type OpenedFile } from '../shared/ipc'
 import type { SettingsPatch } from '../shared/settings'
@@ -30,7 +30,7 @@ const handedOut = new Set<string>()
  * Documents/Tabula named for when it was started, never one in use.
  */
 export const untitledDrawingPath = async (now = new Date()): Promise<string> => {
-  const dir = path.join(app.getPath('documents'), 'Tabula')
+  const dir = untitledFolder()
   await mkdir(dir, { recursive: true })
   const pad = (n: number) => String(n).padStart(2, '0')
   const stamp =
@@ -43,6 +43,20 @@ export const untitledDrawingPath = async (now = new Date()): Promise<string> => 
     return candidate
   }
 }
+
+const untitledFolder = () => path.join(app.getPath('documents'), 'Tabula')
+
+const UNTITLED_NAME = /^Untitled \d{4}-\d{2}-\d{2} \d{2}\.\d{2}( \d+)?\.excalidraw\.md$/
+
+/**
+ * Whether a path is an untitled autosave file: named by untitledDrawingPath
+ * and still in its folder. Such a drawing has never been given a name, so
+ * Save asks for one.
+ */
+export const isUntitledDrawing = (filePath: string) =>
+  path.isAbsolute(filePath) &&
+  path.dirname(path.normalize(filePath)) === untitledFolder() &&
+  UNTITLED_NAME.test(path.basename(filePath))
 
 /**
  * Writes a drawing to disk. The single place drawings are written, so every
@@ -78,7 +92,11 @@ export const registerFileIpc = () => {
   ipcMain.handle(Channels.pickSavePath, async (event, suggestedName: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await dialog.showSaveDialog(win!, {
-      defaultPath: saveDialogPath(suggestedName),
+      // An untitled autosave's own name and folder aren't a suggestion worth
+      // making; offer a plain name where drawings were last saved.
+      defaultPath: saveDialogPath(
+        isUntitledDrawing(suggestedName) ? 'Untitled.excalidraw.md' : suggestedName,
+      ),
       filters: FILTERS,
     })
     if (result.canceled || !result.filePath) return null
@@ -91,6 +109,17 @@ export const registerFileIpc = () => {
     const filePath = await untitledDrawingPath()
     app.addRecentDocument(filePath)
     return filePath
+  })
+
+  ipcMain.handle(Channels.isUntitledPath, (_event, filePath: unknown) =>
+    typeof filePath === 'string' && isUntitledDrawing(filePath),
+  )
+
+  // Only ever removes Tabula's own untitled autosave files, never a path the
+  // renderer merely claims is one.
+  ipcMain.handle(Channels.retireUntitled, async (_event, filePath: unknown) => {
+    if (typeof filePath !== 'string' || !isUntitledDrawing(filePath)) return
+    await rm(filePath, { force: true })
   })
 
   ipcMain.on(Channels.setDirty, (event, dirty: boolean) => {

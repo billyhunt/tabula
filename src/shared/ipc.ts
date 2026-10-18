@@ -7,6 +7,8 @@ export const Channels = {
   saveFile: 'file:save',
   pickSavePath: 'file:pick-save-path',
   untitledPath: 'file:untitled-path',
+  isUntitledPath: 'file:is-untitled-path',
+  retireUntitled: 'file:retire-untitled',
   /** Main asks the window to save before it closes; the window answers on flushDone. */
   flushRequest: 'window:flush-request',
   flushDone: 'window:flush-done',
@@ -84,13 +86,13 @@ export interface SaveResult {
 
 // ── Exports ────────────────────────────────────────────────────────────────
 
-export type ExportFormat = 'png' | 'svg' | 'mermaid'
+export type ExportFormat = 'png' | 'svg' | 'mermaid' | 'markdown'
 
 export interface ExportSaveRequest {
   format: ExportFormat
-  /** File name for the Save dialog, e.g. "Board.png". */
+  /** File name for the Save dialog, e.g. "Board.png", or an absolute path to start in. */
   suggestedName: string
-  /** PNG bytes, or SVG / Mermaid text. */
+  /** PNG bytes, or SVG / Mermaid / Markdown text. */
   data: Uint8Array | string
 }
 
@@ -212,6 +214,13 @@ export interface TabulaApi {
   pickSavePath(suggestedName: string): Promise<string | null>
   /** A new, unused path for autosaving a drawing that was never saved. */
   untitledPath(): Promise<string>
+  /** Whether `path` is one of those autosave files, named only for its start time. */
+  isUntitledPath(path: string): Promise<boolean>
+  /**
+   * Deletes an untitled autosave file once its drawing has been saved under
+   * a real name. Does nothing for any other path.
+   */
+  retireUntitled(path: string): Promise<void>
   /**
    * Main asks before closing the window: the handler saves what autosave
    * would and resolves once it is on disk.
