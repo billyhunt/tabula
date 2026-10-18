@@ -205,6 +205,10 @@ export const importMermaidInput = z
     mermaid: z.string().min(1).describe('Mermaid source, e.g. "flowchart LR\\n  A --> B"'),
     x: coordinate.optional(),
     y: coordinate.optional(),
+    asPicture: z
+      .boolean()
+      .optional()
+      .describe('Accept a diagram type that can only come in as one uneditable picture'),
   })
   .refine((input) => (input.x === undefined) === (input.y === undefined), {
     message: 'give both x and y, or neither',
@@ -296,9 +300,11 @@ export const CANVAS_TOOLS: CanvasToolSpec[] = [
   {
     name: 'import_mermaid',
     description:
-      'Draw a Mermaid diagram (flowchart, sequence, class, …) as editable elements, placed with ' +
-      'its top-left at x/y or in the middle of the view. One undoable step; the new elements ' +
-      'end up selected. Often the quickest way to draw a flowchart.',
+      'Draw a Mermaid diagram as editable elements, placed with its top-left at x/y or in the ' +
+      'middle of the view. One undoable step; the new elements end up selected. Often the ' +
+      'quickest way to draw a flowchart. Only flowchart, sequence and class diagrams become ' +
+      'editable shapes; other types (ER, state, architecture, …) would arrive as a single ' +
+      'picture, so they are refused unless asPicture is true. Prefer rewriting as a flowchart.',
     input: importMermaidInput,
     availability: 'all',
   },

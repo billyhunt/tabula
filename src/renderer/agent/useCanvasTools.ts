@@ -73,9 +73,19 @@ const buildHandlers = (
       deleteElements(api, parseToolArgs('delete_elements', idsInput, args).ids),
 
     import_mermaid: async (args) => {
-      const { mermaid, x, y } = parseToolArgs('import_mermaid', importMermaidInput, args)
+      const { mermaid, x, y, asPicture } = parseToolArgs('import_mermaid', importMermaidInput, args)
       const { elements, files } = await mermaidToElements(mermaid)
       if (!elements.length) throw new Error('The Mermaid diagram produced no elements')
+      // Unsupported diagram types come back as one image. A model that gets a
+      // picture tends to delete it and hand-place everything, badly; telling
+      // it why lets it rewrite the diagram in a type that converts.
+      if (!asPicture && elements.every((e) => e.type === 'image')) {
+        throw new Error(
+          'This Mermaid diagram type can only come in as a single uneditable picture. ' +
+            'Rewrite it as a flowchart (or a sequence or class diagram) to get editable shapes, ' +
+            'or pass asPicture: true to place the picture anyway.',
+        )
+      }
       const at = x !== undefined && y !== undefined ? { x, y } : 'viewport-center'
       const placed = placeElements(api, elements, files, at)
       return {

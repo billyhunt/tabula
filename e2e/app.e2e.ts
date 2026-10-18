@@ -233,6 +233,13 @@ test('an agent draws, exports every format, and saves over MCP', async () => {
   await call('import_mermaid', { mermaid: 'flowchart LR\n  X[Imported] --> Y[Too]', x: 0, y: 300 })
   const labels = (await sceneJson()).elements.map((e) => e.label ?? e.text)
   expect(labels).toEqual(expect.arrayContaining(['Imported', 'Too']))
+  // A diagram type that would only come in as a picture is refused with a
+  // reason, so the agent rewrites it instead of hand-placing everything.
+  const before = (await sceneJson()).elements.length
+  await expect(
+    call('import_mermaid', { mermaid: 'erDiagram\n  CUSTOMER ||--o{ ORDER : places' }),
+  ).rejects.toThrow('Rewrite it as a flowchart')
+  expect((await sceneJson()).elements).toHaveLength(before)
 
   // The second save snapshots the first, which shows up in the history.
   await call('save')
