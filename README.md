@@ -53,8 +53,9 @@ release yet.
   - The model button beside the box switches between the models you picked in
     Settings (see [AI settings](#ai-settings)).
   - Select and copy any of the conversation, or use **Copy** (the whole chat as
-    Markdown) and **Save…** (a `.md` file, suggested next to the drawing as
-    `<drawing> chat.md`).
+    Markdown) and **Save…** (a `.md` file named `<drawing> chat.md`, suggested
+    next to the drawing once it has a name; an untitled drawing's chat starts
+    in your usual save folder).
 - **Text to diagram** (Agent ▸ Text to Diagram…): describe a diagram, preview
   the Mermaid Claude writes, then insert it as editable shapes.
 - **Agents over MCP**: a built-in MCP server lets Claude Code, or any MCP
