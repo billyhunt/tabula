@@ -12,7 +12,7 @@
  */
 import { _electron as electron } from '@playwright/test'
 import gifenc from 'gifenc'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
@@ -105,51 +105,59 @@ const startModel = async () => {
 
 const model = await startModel()
 const profile = mkdtempSync(path.join(os.tmpdir(), 'tabula-demo-'))
-const app = await electron.launch({
-  args: ['.'],
-  cwd: root,
-  env: {
-    ...process.env,
-    VITE_DEV_SERVER_URL: '',
-    TABULA_USER_DATA: profile,
-    ANTHROPIC_BASE_URL: model.url,
-    ANTHROPIC_API_KEY: 'demo',
-    OPENROUTER_API_KEY: '',
-  },
-})
-const page = await app.firstWindow()
-await app.evaluate(({ BrowserWindow }, size) => {
-  BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height)
-}, SIZE)
-await page.waitForSelector('.ask-input')
-await page.evaluate(() => document.fonts.ready)
-await pause(800)
-
 // Frames are captured continuously; identical ones are merged into one
 // longer frame when encoding.
 const frames = []
-let recording = true
-const capture = (async () => {
-  while (recording) {
-    const started = Date.now()
-    frames.push({ at: started, png: await page.screenshot({ scale: 'css' }) })
-    await pause(Math.max(0, 110 - (Date.now() - started)))
-  }
-})()
+let recording = false
+let capture = Promise.resolve()
+let app
+try {
+  app = await electron.launch({
+    args: ['.'],
+    cwd: root,
+    env: {
+      ...process.env,
+      VITE_DEV_SERVER_URL: '',
+      TABULA_USER_DATA: profile,
+      ANTHROPIC_BASE_URL: model.url,
+      ANTHROPIC_API_KEY: 'demo',
+      OPENROUTER_API_KEY: '',
+    },
+  })
+  const page = await app.firstWindow()
+  await app.evaluate(({ BrowserWindow }, size) => {
+    BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height)
+  }, SIZE)
+  await page.waitForSelector('.ask-input')
+  await page.evaluate(() => document.fonts.ready)
+  await pause(800)
 
-await pause(700)
-await page.locator('.ask-input').click()
-await page.keyboard.type(PROMPT, { delay: 28 })
-await pause(400)
-await page.keyboard.press('Enter')
-await page.locator('.ask-run .ask-text').filter({ hasText: 'Every box is an editable shape.' }).waitFor({ timeout: 30_000 })
-// Deselect, so the last frames show the drawing rather than selection boxes.
-await page.mouse.click(SIZE.width / 2, SIZE.height - 40)
-await pause(3000)
-recording = false
-await capture
-await app.close()
-model.server.close()
+  recording = true
+  capture = (async () => {
+    while (recording) {
+      const started = Date.now()
+      frames.push({ at: started, png: await page.screenshot({ scale: 'css' }) })
+      await pause(Math.max(0, 110 - (Date.now() - started)))
+    }
+  })()
+
+  await pause(700)
+  await page.locator('.ask-input').click()
+  await page.keyboard.type(PROMPT, { delay: 28 })
+  await pause(400)
+  await page.keyboard.press('Enter')
+  await page.locator('.ask-run .ask-text').filter({ hasText: 'Every box is an editable shape.' }).waitFor({ timeout: 30_000 })
+  // Deselect, so the last frames show the drawing rather than selection boxes.
+  await page.mouse.click(SIZE.width / 2, SIZE.height - 40)
+  await pause(3000)
+} finally {
+  // Whatever happened, leave nothing behind: no app, no server, no profile.
+  recording = false
+  await capture.catch(() => undefined)
+  await app?.close().catch(() => undefined)
+  await new Promise((resolve) => model.server.close(resolve))
+  rmSync(profile, { recursive: true, force: true })
+}
 
 // One palette for the whole GIF, from a sample of frames, keeps colours
 // steady between frames and the file small.
