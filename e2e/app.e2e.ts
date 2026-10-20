@@ -573,7 +573,11 @@ test('a drawing Finder could not open does not keep its path reserved', async ()
   await expect.poll(async () => (await listIds()).length).toBe(idsBefore.length + 1)
   const [finderId] = (await listIds()).filter((id) => !idsBefore.includes(id))
   await expect.poll(() => app.windows().some((p) => !pagesBefore.includes(p))).toBe(true)
-  await (app.windows().find((p) => !pagesBefore.includes(p)) as Page).waitForSelector('.excalidraw')
+  const finderPage = app.windows().find((p) => !pagesBefore.includes(p)) as Page
+  // The window refuses the file with a native alert; answer it here so it never
+  // sits on the screen.
+  finderPage.on('dialog', (dialog) => void dialog.dismiss())
+  await finderPage.waitForSelector('.excalidraw')
   // Hand the window the file again now that its editor is certainly listening
   // (the first delivery can beat the listener), so it takes the failure path.
   await app.evaluate(
