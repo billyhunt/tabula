@@ -265,8 +265,8 @@ export const App = () => {
   }, [readyToReplace, load])
 
   const newDrawing = useCallback(
-    async (options?: { force?: boolean }) => {
-      if (!api || (!options?.force && !(await readyToReplace()))) return
+    async () => {
+      if (!api || !(await readyToReplace())) return
       // resetScene restores Excalidraw's defaults, which would close the chat.
       const { openSidebar, defaultSidebarDockedPreference } = api.getAppState()
       api.resetScene()

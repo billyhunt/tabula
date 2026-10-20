@@ -33,8 +33,8 @@ export interface DocumentController {
    * autosave is off and there are unsaved edits.
    */
   flush(): Promise<boolean>
-  /** Starts a blank drawing, first saving or confirming unsaved edits unless forced. */
-  newDrawing(options?: { force?: boolean }): Promise<void>
+  /** Starts a blank drawing, first saving or confirming unsaved edits. */
+  newDrawing(): Promise<void>
   /** The scene as file contents in the format `targetPath` implies. */
   serialize(targetPath: string): string
 }

@@ -236,7 +236,6 @@ export const exportInput = z.strictObject({
 
 export const openFileInput = z.strictObject({
   path: z.string().min(1).describe('Absolute path to a .excalidraw.md or .excalidraw file'),
-  discardChanges: z.boolean().optional().describe('Open even if the current drawing has unsaved changes'),
 })
 
 export const saveInput = z.strictObject({
@@ -247,9 +246,7 @@ export const saveInput = z.strictObject({
     .describe('Absolute path ending in .excalidraw.md or .excalidraw; omit to save in place'),
 })
 
-export const newDrawingInput = z.strictObject({
-  discardChanges: z.boolean().optional().describe('Start over even if the drawing has unsaved changes'),
-})
+export const newDrawingInput = empty
 
 // ── Tool list ──────────────────────────────────────────────────────────────
 
@@ -339,8 +336,9 @@ export const CANVAS_TOOLS: CanvasToolSpec[] = [
   {
     name: 'open_file',
     description:
-      'Open a drawing (.excalidraw.md or .excalidraw) in Tabula, replacing the current one. ' +
-      'Refuses when the current drawing has unsaved changes unless discardChanges is true.',
+      'Open a drawing (.excalidraw.md or .excalidraw) in a new Tabula window, leaving the ' +
+      'drawing that is open untouched. A window that is still blank is reused. Later calls ' +
+      'act on the window it opens.',
     input: openFileInput,
     availability: 'mcp',
   },
@@ -355,8 +353,9 @@ export const CANVAS_TOOLS: CanvasToolSpec[] = [
   {
     name: 'new_drawing',
     description:
-      'Start a new, empty, untitled drawing. Refuses when the current drawing has unsaved ' +
-      'changes unless discardChanges is true.',
+      'Start a new, empty, untitled drawing in a new Tabula window, leaving the drawing that ' +
+      'is open untouched. A window that is still blank is reused. Later calls act on the ' +
+      'new window.',
     input: newDrawingInput,
     availability: 'mcp',
   },
@@ -374,10 +373,11 @@ export const findCanvasTool = (name: string) => CANVAS_TOOLS.find((tool) => tool
 export const BRIDGE_TOOLS = {
   /** Answers once the editor is up, so main knows a new window is ready. */
   ping: empty,
+  /** Whether the window holds nothing worth keeping, so a new drawing can reuse it. */
+  isBlank: empty,
   loadFile: z.strictObject({
     path: z.string().min(1),
     contents: z.string(),
-    discardChanges: z.boolean().optional(),
   }),
   renderExport: z.strictObject({ format: exportFormat, dark: z.boolean().optional() }),
   saveDocument: z.strictObject({ path: z.string().min(1).optional() }),
@@ -391,6 +391,9 @@ export const renderedText = z.object({ text: z.string(), warnings: z.array(z.str
 export const renderedPdf = z.object({
   pages: z.array(z.object({ svg: z.string(), width: z.number(), height: z.number() })),
 })
+
+/** `isBlank` result, in `json`. */
+export const blankState = z.object({ blank: z.boolean() })
 
 // ── Validation ─────────────────────────────────────────────────────────────
 

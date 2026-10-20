@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
   exportInput,
+  newDrawingInput,
   openFileInput,
   parseToolArgs,
   renderedPdf,
@@ -20,13 +21,20 @@ import { checkExportPath, checkOpenPath, checkSavePath } from './mcpChecks'
  * handler validates its arguments before asking for a window, so a bad call
  * never opens one.
  */
-type FileTool = (args: unknown, window: () => Promise<BrowserWindow>) => Promise<AgentToolResult>
+export interface ToolWindows {
+  /** The window agents act on now. */
+  current: () => Promise<BrowserWindow>
+  /** A window with nothing in it for a drawing of its own; `created` if it is new. */
+  blank: () => Promise<{ win: BrowserWindow; created: boolean }>
+}
+
+type FileTool = (args: unknown, windows: ToolWindows) => Promise<AgentToolResult>
 
 export const FILE_TOOLS: Record<string, FileTool> = {
-  export: async (args, window) => {
+  export: async (args, windows) => {
     const { format, path: requested, overwrite = false, dark } = parseToolArgs('export', exportInput, args)
     const target = await checkExportPath(format, requested, overwrite)
-    const rendered = await callCanvasTool(await window(), 'renderExport', { format, dark }, 120_000)
+    const rendered = await callCanvasTool(await windows.current(), 'renderExport', { format, dark }, 120_000)
     // 'wx' keeps the no-overwrite promise even if the file appeared meanwhile.
     const flag = overwrite ? 'w' : 'wx'
     let warnings: string[] = []
@@ -44,23 +52,36 @@ export const FILE_TOOLS: Record<string, FileTool> = {
     return { text: `Exported ${format.toUpperCase()} to ${target}${notes}` }
   },
 
-  open_file: async (args, window) => {
-    const { path: requested, discardChanges } = parseToolArgs('open_file', openFileInput, args)
+  open_file: async (args, windows) => {
+    const { path: requested } = parseToolArgs('open_file', openFileInput, args)
     const target = await checkOpenPath(requested)
     const contents = await readFile(target, 'utf8')
-    // Loading through the bridge (rather than the fileOpened event) means the
-    // agent's next call already sees the new drawing. The window refuses if
-    // the drawing has unsaved changes, unless told to discard them.
-    await callCanvasTool(await window(), 'loadFile', { path: target, contents, discardChanges }, 60_000)
+    // The drawing that is open stays as it is: this one gets a window of its
+    // own. Loading through the bridge (rather than the fileOpened event)
+    // means the agent's next call already sees the new drawing.
+    const { win, created } = await windows.blank()
+    try {
+      await callCanvasTool(win, 'loadFile', { path: target, contents }, 60_000)
+    } catch (err) {
+      // A file that would not load must not leave an empty window behind.
+      if (created && !win.isDestroyed()) win.close()
+      throw err
+    }
     app.addRecentDocument(target)
-    return { text: `Opened ${path.basename(target)}` }
+    return { text: `Opened ${path.basename(target)} in ${created ? 'a new' : 'an empty'} window` }
   },
 
-  save: async (args, window) => {
+  save: async (args, windows) => {
     const { path: requested } = parseToolArgs('save', saveInput, args)
     const target = requested === undefined ? undefined : await checkSavePath(requested)
-    const result = await callCanvasTool(await window(), 'saveDocument', { path: target }, 60_000)
+    const result = await callCanvasTool(await windows.current(), 'saveDocument', { path: target }, 60_000)
     if (target) app.addRecentDocument(target)
     return result
+  },
+
+  new_drawing: async (args, windows) => {
+    parseToolArgs('new_drawing', newDrawingInput, args)
+    const { created } = await windows.blank()
+    return { text: created ? 'Started a new drawing in a new window' : 'Started a new drawing in the empty window' }
   },
 }
