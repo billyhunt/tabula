@@ -38,6 +38,7 @@ const api: TabulaApi = {
     }),
   setDirty: (dirty) => ipcRenderer.send(Channels.setDirty, dirty),
   setTitle: (path) => ipcRenderer.send(Channels.setTitle, path),
+  fileLoadFailed: () => ipcRenderer.send(Channels.fileLoadFailed),
   onMenuCommand: (handler) => listen<MenuCommand>(Channels.menuCommand, handler),
   onFileOpened: (handler) => listen<OpenedFile>(Channels.fileOpened, handler),
   onFullscreen: (handler) => listen<boolean>(Channels.fullscreen, handler),

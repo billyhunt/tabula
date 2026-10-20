@@ -14,6 +14,7 @@ export const Channels = {
   flushDone: 'window:flush-done',
   setDirty: 'window:set-dirty',
   setTitle: 'window:set-title',
+  fileLoadFailed: 'window:file-load-failed',
   menuCommand: 'menu:command',
   fileOpened: 'file:opened',
   fullscreen: 'window:fullscreen',
@@ -228,6 +229,8 @@ export interface TabulaApi {
   onFlushRequest(handler: () => Promise<FlushResult>): () => void
   setDirty(dirty: boolean): void
   setTitle(path: string | null): void
+  /** Tells main a file it handed this window could not be loaded, so the window no longer counts as showing it. */
+  fileLoadFailed(): void
   onMenuCommand(handler: (command: MenuCommand) => void): () => void
   onFileOpened(handler: (file: OpenedFile) => void): () => void
   onFullscreen(handler: (fullscreen: boolean) => void): () => void

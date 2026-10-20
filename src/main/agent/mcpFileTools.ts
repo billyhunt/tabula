@@ -37,11 +37,18 @@ export interface ToolWindows {
 }
 
 /**
- * `open_file` calls run one at a time, so a second call for the same file
- * finds the first one's window (or its claim on one) instead of opening the
- * file twice.
+ * `open_file` and `new_drawing` calls run one at a time, so a second call for
+ * the same file finds the first one's window (or its claim on one) instead of
+ * opening the file twice, and a new drawing never shares a window a file is
+ * being opened into.
  */
-let openQueue: Promise<unknown> = Promise.resolve()
+let windowQueue: Promise<unknown> = Promise.resolve()
+
+const inWindowQueue = <T>(work: () => Promise<T>): Promise<T> => {
+  const run = windowQueue.then(work)
+  windowQueue = run.catch(() => undefined)
+  return run
+}
 
 const openFile = async (args: unknown, windows: ToolWindows): Promise<AgentToolResult> => {
   const { path: requested } = parseToolArgs('open_file', openFileInput, args)
@@ -105,11 +112,7 @@ export const FILE_TOOLS: Record<string, FileTool> = {
     return { text: `Exported ${format.toUpperCase()} to ${target}${notes}` }
   },
 
-  open_file: (args, windows) => {
-    const run = openQueue.then(() => openFile(args, windows))
-    openQueue = run.catch(() => undefined)
-    return run
-  },
+  open_file: (args, windows) => inWindowQueue(() => openFile(args, windows)),
 
   save: async (args, windows) => {
     const { path: requested } = parseToolArgs('save', saveInput, args)
@@ -121,7 +124,7 @@ export const FILE_TOOLS: Record<string, FileTool> = {
 
   new_drawing: async (args, windows) => {
     parseToolArgs('new_drawing', newDrawingInput, args)
-    const { created } = await windows.blank()
+    const { created } = await inWindowQueue(() => windows.blank())
     return { text: created ? 'Started a new drawing in a new window' : 'Started a new drawing in the empty window' }
   },
 }

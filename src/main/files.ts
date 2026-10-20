@@ -206,6 +206,11 @@ export const registerFileIpc = () => {
     win.setTitle(filePath ? path.basename(filePath) : 'Untitled')
   })
 
+  ipcMain.on(Channels.fileLoadFailed, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) releaseClaim(win)
+  })
+
   ipcMain.handle(Channels.settingsGet, () => getSettings())
   ipcMain.handle(Channels.settingsUpdate, (_event, patch: SettingsPatch) => updateSettings(patch))
 }

@@ -167,6 +167,8 @@ export const App = () => {
           if ((err as Error).message === WINDOW_NOT_BLANK) throw err
           throw new Error(`Not a drawing Tabula can open: ${(err as Error).message}`)
         }
+        // Retire main's claim on this file before the modal blocks the window.
+        window.tabula.fileLoadFailed()
         window.alert(`Couldn't open ${basename(file.path)}: ${(err as Error).message}`)
         return
       }

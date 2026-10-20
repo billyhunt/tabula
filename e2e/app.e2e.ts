@@ -561,6 +561,40 @@ test("an agent's open_file refuses unreadable drawings, never opens a file twice
   await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.focus(), winId)
 })
 
+test('a drawing Finder could not open does not keep its path reserved', async () => {
+  const listIds = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.id))
+  const file = path.join(tmp, 'finder-open.excalidraw')
+  writeFileSync(file, '{}') // valid JSON, not a drawing: the window refuses it with an alert
+  const idsBefore = await listIds()
+  const pagesBefore = app.windows()
+  await app.evaluate(({ app: electronApp }, target) => {
+    electronApp.emit('open-file', { preventDefault() {} }, target)
+  }, file)
+  await expect.poll(async () => (await listIds()).length).toBe(idsBefore.length + 1)
+  const [finderId] = (await listIds()).filter((id) => !idsBefore.includes(id))
+  await expect.poll(() => app.windows().some((p) => !pagesBefore.includes(p))).toBe(true)
+  await (app.windows().find((p) => !pagesBefore.includes(p)) as Page).waitForSelector('.excalidraw')
+  // Hand the window the file again now that its editor is certainly listening
+  // (the first delivery can beat the listener), so it takes the failure path.
+  await app.evaluate(
+    ({ BrowserWindow }, args) => {
+      BrowserWindow.fromId(args.id)?.webContents.send('file:opened', { path: args.file, contents: '{}' })
+    },
+    { id: finderId, file },
+  )
+
+  // Once the file is fixed an agent can open it. While the window's claim on
+  // the path stood, the call answered "already open" and loaded nothing.
+  writeFileSync(file, JSON.stringify({ type: 'excalidraw', version: 2, source: 'e2e', elements: [], appState: {}, files: {} }))
+  await expect
+    .poll(async () => (await call('open_file', { path: file })).some((c) => c.text?.startsWith('Opened')), { timeout: 10_000 })
+    .toBe(true)
+  // The failed window was reused, not a second one made.
+  expect((await listIds()).length).toBe(idsBefore.length + 1)
+
+  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.focus(), winId)
+})
+
 test('the Export image dialog opens on the whole board even with something selected', async () => {
   // add_elements leaves what it adds selected, which Excalidraw's dialog
   // would otherwise turn into an export of just that.
