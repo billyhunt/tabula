@@ -16,7 +16,6 @@ import type { AgentToolResult } from '../../shared/ipc'
 import { placeElements } from '../canvas/insert'
 import type { DocumentController } from '../document'
 import { renderPdfPages, renderPng, renderSvg } from '../export/render'
-import { isObsidianMarkdown, parseObsidian } from '../format/obsidian'
 import { mermaidToElements } from '../mermaid/fromMermaid'
 import { toMermaid } from '../mermaid/toMermaid'
 import { addElements, summarizePlaced } from './tools/add'
@@ -144,16 +143,10 @@ const buildHandlers = (
 
     loadFile: async (args) => {
       const file = parseToolArgs('loadFile', BRIDGE_TOOLS.loadFile, args)
-      // The editor shows an alert for a file it can't read, which would stall
-      // the agent; catch the usual cases here and report them instead.
-      try {
-        if (isObsidianMarkdown(file.path)) parseObsidian(file.contents)
-        else JSON.parse(file.contents)
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err)
-        throw new Error(`Not a drawing Tabula can open: ${reason}`)
-      }
-      await docRef.current.load(file)
+      // Main found this window blank in an earlier round trip, and the user
+      // may have drawn since: load refuses to replace that (WINDOW_NOT_BLANK)
+      // and main opens a new window instead.
+      await docRef.current.load(file, { throwOnError: true, intoBlankOnly: true })
       return { text: `Opened ${file.path}` }
     },
 

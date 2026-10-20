@@ -119,8 +119,8 @@ export const renderPng = async (
 /** A standalone SVG document with its fonts embedded. */
 export const renderSvg = async (
   api: ExcalidrawImperativeAPI,
-  opts: { selectionOnly?: boolean; background?: boolean; dark?: boolean } = {},
-): Promise<string> => svgDocument(await svgElement(api, exportScope(api, opts.selectionOnly), opts))
+  opts: { background?: boolean; dark?: boolean } = {},
+): Promise<string> => svgDocument(await svgElement(api, exportScope(api), opts))
 
 /**
  * One page per frame with `perFrame` (frames in reading order), otherwise —
@@ -128,9 +128,9 @@ export const renderSvg = async (
  */
 export const renderPdfPages = async (
   api: ExcalidrawImperativeAPI,
-  opts: { perFrame: boolean; selectionOnly?: boolean },
+  opts: { perFrame: boolean },
 ): Promise<PdfPage[]> => {
-  const scope = exportScope(api, opts.selectionOnly)
+  const scope = exportScope(api)
   const frames = opts.perFrame ? readingOrder(scope.elements.filter(isFrame)) : []
   // A frame page takes its contents from the whole board: the frame clips them.
   const all = [...api.getSceneElements()]

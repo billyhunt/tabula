@@ -337,8 +337,9 @@ export const CANVAS_TOOLS: CanvasToolSpec[] = [
     name: 'open_file',
     description:
       'Open a drawing (.excalidraw.md or .excalidraw) in a new Tabula window, leaving the ' +
-      'drawing that is open untouched. A window that is still blank is reused. Later calls ' +
-      'act on the window it opens.',
+      'drawing that is open untouched. A window that is still blank is reused, and a drawing ' +
+      'already open in a window is brought to the front instead of being opened twice. Later ' +
+      'calls act on the Tabula window in front, which is this one until the user clicks another.',
     input: openFileInput,
     availability: 'mcp',
   },
@@ -355,7 +356,7 @@ export const CANVAS_TOOLS: CanvasToolSpec[] = [
     description:
       'Start a new, empty, untitled drawing in a new Tabula window, leaving the drawing that ' +
       'is open untouched. A window that is still blank is reused. Later calls act on the ' +
-      'new window.',
+      'Tabula window in front, which is this one until the user clicks another.',
     input: newDrawingInput,
     availability: 'mcp',
   },
@@ -394,6 +395,12 @@ export const renderedPdf = z.object({
 
 /** `isBlank` result, in `json`. */
 export const blankState = z.object({ blank: z.boolean() })
+
+/**
+ * What `loadFile` fails with when its window gained a drawing after main found
+ * it blank; main then opens the file in a new window instead.
+ */
+export const WINDOW_NOT_BLANK = 'This window is no longer blank'
 
 // ── Validation ─────────────────────────────────────────────────────────────
 

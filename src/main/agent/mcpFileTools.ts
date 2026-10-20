@@ -9,9 +9,11 @@ import {
   renderedPdf,
   renderedText,
   saveInput,
+  WINDOW_NOT_BLANK,
 } from '../../shared/agentTools'
 import type { AgentToolResult } from '../../shared/ipc'
 import { writePdf } from '../exports'
+import { claimFile, releaseClaim, windowOnFile } from '../windows'
 import { callCanvasTool } from './bridge'
 import { checkExportPath, checkOpenPath, checkSavePath } from './mcpChecks'
 
@@ -21,11 +23,62 @@ import { checkExportPath, checkOpenPath, checkSavePath } from './mcpChecks'
  * handler validates its arguments before asking for a window, so a bad call
  * never opens one.
  */
+export interface BlankWindow {
+  win: BrowserWindow
+  /** True when the window was opened for this call. */
+  created: boolean
+}
+
 export interface ToolWindows {
   /** The window agents act on now. */
   current: () => Promise<BrowserWindow>
-  /** A window with nothing in it for a drawing of its own; `created` if it is new. */
-  blank: () => Promise<{ win: BrowserWindow; created: boolean }>
+  /** A window with nothing in it for a drawing of its own; `fresh` insists on a new one. */
+  blank: (options?: { fresh?: boolean }) => Promise<BlankWindow>
+}
+
+/**
+ * `open_file` calls run one at a time, so a second call for the same file
+ * finds the first one's window (or its claim on one) instead of opening the
+ * file twice.
+ */
+let openQueue: Promise<unknown> = Promise.resolve()
+
+const openFile = async (args: unknown, windows: ToolWindows): Promise<AgentToolResult> => {
+  const { path: requested } = parseToolArgs('open_file', openFileInput, args)
+  const target = await checkOpenPath(requested)
+  // Two windows on one file would autosave over each other.
+  const already = windowOnFile(target)
+  if (already) {
+    already.show()
+    already.focus()
+    return { text: `${path.basename(target)} is already open; brought its window to the front` }
+  }
+  const contents = await readFile(target, 'utf8')
+  // The drawing that is open stays as it is: this one gets a window of its
+  // own. Loading through the bridge (rather than the fileOpened event) means
+  // the agent's next call already sees the new drawing.
+  const openIn = async (slot: BlankWindow) => {
+    claimFile(slot.win, target)
+    try {
+      await callCanvasTool(slot.win, 'loadFile', { path: target, contents }, 60_000)
+    } catch (err) {
+      releaseClaim(slot.win)
+      // A file that would not load must not leave an empty window behind.
+      if (slot.created && !slot.win.isDestroyed()) slot.win.close()
+      throw err
+    }
+    return slot
+  }
+  let slot: BlankWindow
+  try {
+    slot = await openIn(await windows.blank())
+  } catch (err) {
+    // The window was blank a moment ago but has a drawing now: leave it be.
+    if (!(err instanceof Error && err.message === WINDOW_NOT_BLANK)) throw err
+    slot = await openIn(await windows.blank({ fresh: true }))
+  }
+  app.addRecentDocument(target)
+  return { text: `Opened ${path.basename(target)} in ${slot.created ? 'a new' : 'an empty'} window` }
 }
 
 type FileTool = (args: unknown, windows: ToolWindows) => Promise<AgentToolResult>
@@ -52,23 +105,10 @@ export const FILE_TOOLS: Record<string, FileTool> = {
     return { text: `Exported ${format.toUpperCase()} to ${target}${notes}` }
   },
 
-  open_file: async (args, windows) => {
-    const { path: requested } = parseToolArgs('open_file', openFileInput, args)
-    const target = await checkOpenPath(requested)
-    const contents = await readFile(target, 'utf8')
-    // The drawing that is open stays as it is: this one gets a window of its
-    // own. Loading through the bridge (rather than the fileOpened event)
-    // means the agent's next call already sees the new drawing.
-    const { win, created } = await windows.blank()
-    try {
-      await callCanvasTool(win, 'loadFile', { path: target, contents }, 60_000)
-    } catch (err) {
-      // A file that would not load must not leave an empty window behind.
-      if (created && !win.isDestroyed()) win.close()
-      throw err
-    }
-    app.addRecentDocument(target)
-    return { text: `Opened ${path.basename(target)} in ${created ? 'a new' : 'an empty'} window` }
+  open_file: (args, windows) => {
+    const run = openQueue.then(() => openFile(args, windows))
+    openQueue = run.catch(() => undefined)
+    return run
   },
 
   save: async (args, windows) => {

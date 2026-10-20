@@ -132,9 +132,13 @@ test.beforeAll(async () => {
   })
   page = await app.firstWindow()
   winId = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id)
-  page.on('console', (m) => {
-    if (m.type() === 'error') consoleErrors.push(m.text())
-  })
+  // Every window the app opens, so errors in the ones the tests open count too.
+  const watch = (p: Page) =>
+    p.on('console', (m) => {
+      if (m.type() === 'error') consoleErrors.push(m.text())
+    })
+  app.windows().forEach(watch)
+  app.on('window', watch)
   await page.waitForSelector('.excalidraw')
   // The tests click at fixed points and expect the chat docked, which needs
   // a window this size. CI machines have small screens, where macOS would
@@ -477,6 +481,84 @@ test("an agent's new_drawing leaves the open drawing alone, and reuses a window 
   await focus(blankId)
   await call('add_elements', { elements: [{ type: 'text', x: 0, y: 0, text: 'Second drawing' }] })
   await expect.poll(async () => (await sceneJson()).elements.length).toBe(1)
+})
+
+test("an agent's open_file refuses unreadable drawings, never opens a file twice, and never replaces a drawing", async () => {
+  const countWindows = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)
+  const shownFiles = () =>
+    app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.getRepresentedFilename()))
+  const drawing = (text: string) =>
+    JSON.stringify({
+      type: 'excalidraw',
+      version: 2,
+      source: 'e2e',
+      elements: [
+        { id: text, type: 'rectangle', x: 0, y: 0, width: 100, height: 60, version: 1, versionNonce: 1, isDeleted: false },
+      ],
+      appState: {},
+      files: {},
+    })
+  const before = await countWindows()
+  expect((await sceneJson()).elements.length).toBeGreaterThan(0)
+
+  // Valid JSON that is not a drawing, and text that is not JSON: both fail the call
+  // (no dialog to stall on) and leave no stray window behind.
+  for (const [name, body] of [
+    ['empty-object.excalidraw', '{}'],
+    ['garbled.excalidraw', 'not json at all'],
+  ]) {
+    const bad = path.join(tmp, name)
+    writeFileSync(bad, body)
+    await expect(call('open_file', { path: bad })).rejects.toThrow(/Not a drawing Tabula can open/)
+    await expect.poll(countWindows).toBe(before)
+  }
+
+  // The window in front has a drawing, so the editor refuses to load over it.
+  const loadFileInto = (id: number, contents: string) =>
+    app.evaluate(
+      ({ BrowserWindow, ipcMain }, args) =>
+        new Promise<{ ok: boolean; error?: string }>((resolve) => {
+          const requestId = `e2e-${Date.now()}`
+          const onResponse = (_event: unknown, response: { id: string; ok: boolean; error?: string }) => {
+            if (response.id !== requestId) return
+            ipcMain.off('agent:response', onResponse)
+            resolve(response)
+          }
+          ipcMain.on('agent:response', onResponse)
+          BrowserWindow.fromId(args.id)?.webContents.send('agent:request', {
+            id: requestId,
+            tool: 'loadFile',
+            args: { path: '/tmp/never-written.excalidraw', contents: args.contents },
+          })
+        }),
+      { id, contents },
+    )
+  const drawn = (await sceneJson()).elements.length
+  expect(await loadFileInto(winId, drawing('intruder'))).toMatchObject({
+    ok: false,
+    error: 'This window is no longer blank',
+  })
+  expect((await sceneJson()).elements).toHaveLength(drawn)
+
+  // Concurrent opens, one file twice: each file ends up open in exactly one window.
+  const fileA = path.join(tmp, 'open-twice-a.excalidraw')
+  const fileB = path.join(tmp, 'open-twice-b.excalidraw')
+  writeFileSync(fileA, drawing('a'))
+  writeFileSync(fileB, drawing('b'))
+  const results = await Promise.all([
+    call('open_file', { path: fileA }),
+    call('open_file', { path: fileB }),
+    call('open_file', { path: fileA }),
+  ])
+  expect(results[2].some((c) => c.text?.includes('already open'))).toBe(true)
+  await expect.poll(async () => (await shownFiles()).filter((f) => f === fileA || f === fileB).length).toBe(2)
+  const shown = await shownFiles()
+  expect(shown.filter((f) => f === fileA)).toHaveLength(1)
+  expect(shown.filter((f) => f === fileB)).toHaveLength(1)
+  expect(await countWindows()).toBe(before + 2)
+
+  // Back to the drawing the later tests expect.
+  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.focus(), winId)
 })
 
 test('the Export image dialog opens on the whole board even with something selected', async () => {
