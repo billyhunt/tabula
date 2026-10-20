@@ -6,7 +6,6 @@ import {
   BRIDGE_TOOLS,
   idsInput,
   importMermaidInput,
-  newDrawingInput,
   parseToolArgs,
   screenshotInput,
   selectElementsInput,
@@ -17,7 +16,6 @@ import type { AgentToolResult } from '../../shared/ipc'
 import { placeElements } from '../canvas/insert'
 import type { DocumentController } from '../document'
 import { renderPdfPages, renderPng, renderSvg } from '../export/render'
-import { isObsidianMarkdown, parseObsidian } from '../format/obsidian'
 import { mermaidToElements } from '../mermaid/fromMermaid'
 import { toMermaid } from '../mermaid/toMermaid'
 import { addElements, summarizePlaced } from './tools/add'
@@ -38,9 +36,6 @@ const toBase64 = (bytes: Uint8Array) => {
   }
   return btoa(binary)
 }
-
-const UNSAVED =
-  'The current drawing has unsaved changes and autosave is off; save it first or pass discardChanges: true'
 
 const buildHandlers = (
   api: ExcalidrawImperativeAPI,
@@ -138,32 +133,20 @@ const buildHandlers = (
       }
     },
 
-    new_drawing: async (args) => {
-      const { discardChanges } = parseToolArgs('new_drawing', newDrawingInput, args)
-      // With autosave on, unsaved edits are saved rather than refused.
-      if (!discardChanges && !(await docRef.current.flush())) throw new Error(UNSAVED)
-      await docRef.current.newDrawing({ force: true })
-      return { text: 'Started a new drawing' }
-    },
-
     // ── Bridge-only tools main uses for the MCP file tools ──
     ping: () => ({ text: 'ready' }),
 
+    // No file and nothing drawn: a window a new drawing can use without losing anything.
+    isBlank: () => ({
+      json: { blank: !docRef.current.filePath && api.getSceneElements().length === 0 },
+    }),
+
     loadFile: async (args) => {
-      const { discardChanges, ...file } = parseToolArgs('loadFile', BRIDGE_TOOLS.loadFile, args)
-      // The editor shows an alert for a file it can't read, which would stall
-      // the agent; catch the usual cases here and report them instead.
-      try {
-        if (isObsidianMarkdown(file.path)) parseObsidian(file.contents)
-        else JSON.parse(file.contents)
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err)
-        throw new Error(`Not a drawing Tabula can open: ${reason}`)
-      }
-      // Checked here, right before replacing the scene, rather than in an
-      // earlier round trip the user could have edited after.
-      if (!discardChanges && !(await docRef.current.flush())) throw new Error(UNSAVED)
-      await docRef.current.load(file)
+      const file = parseToolArgs('loadFile', BRIDGE_TOOLS.loadFile, args)
+      // Main found this window blank in an earlier round trip, and the user
+      // may have drawn since: load refuses to replace that (WINDOW_NOT_BLANK)
+      // and main opens a new window instead.
+      await docRef.current.load(file, { throwOnError: true, intoBlankOnly: true })
       return { text: `Opened ${file.path}` }
     },
 

@@ -13,13 +13,13 @@ import {
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { CANVAS_TOOLS, findCanvasTool, parseToolArgs } from '../../shared/agentTools'
+import { blankState, CANVAS_TOOLS, findCanvasTool, parseToolArgs } from '../../shared/agentTools'
 import type { AgentStatus } from '../../shared/ipc'
 import { getSettings, onSettingsChanged } from '../settings'
-import { createWindow, focusedWindow } from '../windows'
+import { createWindow, focusedWindow, hasPendingFile } from '../windows'
 import { callCanvasTool, reportActivity } from './bridge'
 import { checkMcpRequest } from './mcpChecks'
-import { FILE_TOOLS } from './mcpFileTools'
+import { FILE_TOOLS, type BlankWindow, type ToolWindows } from './mcpFileTools'
 
 /**
  * The local MCP server: lets agents such as Claude Code draw on the open
@@ -86,22 +86,59 @@ const initializeMessage = z.object({
 
 let running = 0
 
-/** The window agents act on; opens one (and waits for its editor) if none. */
-const canvasWindow = async (): Promise<BrowserWindow> => {
-  const existing = focusedWindow()
-  if (existing && !existing.webContents.isLoading()) return existing
-  const win = existing ?? createWindow()
-  // The window listens for tools only once its editor is up; ping until then.
+/** Waits for a window's editor to come up: it listens for tools only then. */
+const editorReady = async (win: BrowserWindow) => {
   const deadline = Date.now() + 20_000
   for (;;) {
     try {
       await callCanvasTool(win, 'ping', {}, 1_000)
-      return win
+      return
     } catch (err) {
       if (win.isDestroyed() || Date.now() > deadline) throw err
     }
   }
 }
+
+/** The window agents act on; opens one (and waits for its editor) if none. */
+const canvasWindow = async (): Promise<BrowserWindow> => {
+  const existing = focusedWindow()
+  if (existing && !existing.webContents.isLoading()) return existing
+  const win = existing ?? createWindow()
+  await editorReady(win)
+  return win
+}
+
+/**
+ * A window for a drawing of the agent's own, so the user's open drawing is
+ * never replaced: the current window when it holds nothing yet, else a new
+ * one (always a new one with `fresh`). It is the most recently focused window
+ * afterwards, but later calls follow focus, so it is only the agent's own
+ * until the user clicks another window.
+ */
+const blankWindow = async (options?: { fresh?: boolean }): Promise<BlankWindow> => {
+  if (!options?.fresh) {
+    const current = await canvasWindow()
+    // A window that cannot answer (stuck in a dialog, say) counts as occupied:
+    // a new window is safe, replacing what is in it is not.
+    const blank =
+      !hasPendingFile(current) &&
+      (await callCanvasTool(current, 'isBlank', {}, 5_000).then(
+        ({ json }) => blankState.parse(json).blank,
+        () => false,
+      ))
+    if (blank) return { win: current, created: false }
+  }
+  const win = createWindow()
+  try {
+    await editorReady(win)
+  } catch (err) {
+    if (!win.isDestroyed()) win.close()
+    throw err
+  }
+  return { win, created: true }
+}
+
+const WINDOWS: ToolWindows = { current: canvasWindow, blank: blankWindow }
 
 const callTool = async (name: string, args: unknown): Promise<CallToolResult> => {
   const spec = findCanvasTool(name)
@@ -111,7 +148,7 @@ const callTool = async (name: string, args: unknown): Promise<CallToolResult> =>
   try {
     const fileTool = FILE_TOOLS[name]
     const result = fileTool
-      ? await fileTool(args, canvasWindow)
+      ? await fileTool(args, WINDOWS)
       : await callCanvasTool(await canvasWindow(), name, parseToolArgs(name, spec.input, args))
     const content: CallToolResult['content'] = []
     if (result.text) content.push({ type: 'text', text: result.text })

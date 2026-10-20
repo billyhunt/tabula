@@ -6,6 +6,7 @@ import { Channels, type OpenedFile } from '../shared/ipc'
 import type { SettingsPatch } from '../shared/settings'
 import { getSettings, updateSettings } from './settings'
 import { snapshotVersion } from './versions'
+import { releaseClaim } from './windows'
 
 // Obsidian Excalidraw (.excalidraw.md) is the native format; plain
 // .excalidraw files still open and save in their own format.
@@ -200,7 +201,14 @@ export const registerFileIpc = () => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
     win.setRepresentedFilename(filePath ?? '')
+    // The editor now reports its own file; a claim on it has done its job.
+    if (filePath) releaseClaim(win)
     win.setTitle(filePath ? path.basename(filePath) : 'Untitled')
+  })
+
+  ipcMain.on(Channels.fileLoadFailed, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) releaseClaim(win)
   })
 
   ipcMain.handle(Channels.settingsGet, () => getSettings())

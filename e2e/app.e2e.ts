@@ -29,10 +29,36 @@ let mcp: Client
 let tmp: string
 const consoleErrors: string[] = []
 
+// The window the tests drive. An agent's new_drawing and open_file open one of
+// their own, so tests follow it with inNewWindow.
+let winId: number
+
 const sendCommand = (cmd: string) =>
-  app.evaluate(({ BrowserWindow }, command) => {
-    BrowserWindow.getAllWindows()[0].webContents.send('menu:command', command)
-  }, cmd)
+  app.evaluate(
+    ({ BrowserWindow }, { id, command }) => {
+      BrowserWindow.fromId(id)?.webContents.send('menu:command', command)
+    },
+    { id: winId, command: cmd },
+  )
+
+/**
+ * Runs `open`, which opens a drawing in a new window, or in the current one if
+ * that is still blank, and makes that window the one the tests drive.
+ */
+const inNewWindow = async (open: () => Promise<unknown>) => {
+  const listIds = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.id))
+  const idsBefore = await listIds()
+  const pagesBefore = app.windows()
+  await open()
+  const fresh = (await listIds()).filter((id) => !idsBefore.includes(id))
+  expect(fresh.length).toBeLessThanOrEqual(1)
+  if (fresh.length === 0) return
+  winId = fresh[0]
+  await expect.poll(() => app.windows().some((p) => !pagesBefore.includes(p))).toBe(true)
+  page = app.windows().find((p) => !pagesBefore.includes(p)) as Page
+  await page.waitForSelector('.excalidraw')
+  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.setContentSize(1280, 820), winId)
+}
 
 /** Makes main's Save dialog answer `filePath` without showing, counting calls. */
 const stubSaveDialog = (filePath: string) =>
@@ -105,9 +131,14 @@ test.beforeAll(async () => {
     },
   })
   page = await app.firstWindow()
-  page.on('console', (m) => {
-    if (m.type() === 'error') consoleErrors.push(m.text())
-  })
+  winId = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id)
+  // Every window the app opens, so errors in the ones the tests open count too.
+  const watch = (p: Page) =>
+    p.on('console', (m) => {
+      if (m.type() === 'error') consoleErrors.push(m.text())
+    })
+  app.windows().forEach(watch)
+  app.on('window', watch)
   await page.waitForSelector('.excalidraw')
   // The tests click at fixed points and expect the chat docked, which needs
   // a window this size. CI machines have small screens, where macOS would
@@ -425,8 +456,167 @@ test("text from every source uses Tabula's font, including Excalidraw's Mermaid 
   expect(texts.filter((e) => e.fontFamily !== 8)).toEqual([])
 })
 
+test("an agent's new_drawing leaves the open drawing alone, and reuses a window that is still blank", async () => {
+  const drawn = (await sceneJson()).elements.length
+  expect(drawn).toBeGreaterThan(0)
+  const drawnId = winId
+  const focus = (id: number) =>
+    app.evaluate(({ BrowserWindow }, target) => BrowserWindow.fromId(target)?.focus(), id)
+
+  await inNewWindow(() => call('new_drawing'))
+  const blankId = winId
+  expect(blankId).not.toBe(drawnId)
+  expect((await sceneJson()).elements).toHaveLength(0)
+
+  // Nothing drawn yet, so asking again reuses the window instead of piling up more.
+  const windows = app.windows().length
+  await call('new_drawing')
+  expect(app.windows()).toHaveLength(windows)
+
+  // The first drawing was not replaced.
+  await focus(drawnId)
+  await expect.poll(async () => (await sceneJson()).elements.length).toBe(drawn)
+
+  // Later calls draw in the new window once it is the one in front.
+  await focus(blankId)
+  await call('add_elements', { elements: [{ type: 'text', x: 0, y: 0, text: 'Second drawing' }] })
+  await expect.poll(async () => (await sceneJson()).elements.length).toBe(1)
+})
+
+test("an agent's open_file refuses unreadable drawings, never opens a file twice, and never replaces a drawing", async () => {
+  const countWindows = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)
+  const shownFiles = () =>
+    app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.getRepresentedFilename()))
+  const drawing = (text: string) =>
+    JSON.stringify({
+      type: 'excalidraw',
+      version: 2,
+      source: 'e2e',
+      elements: [
+        { id: text, type: 'rectangle', x: 0, y: 0, width: 100, height: 60, version: 1, versionNonce: 1, isDeleted: false },
+      ],
+      appState: {},
+      files: {},
+    })
+  const before = await countWindows()
+  expect((await sceneJson()).elements.length).toBeGreaterThan(0)
+
+  // Valid JSON that is not a drawing, and text that is not JSON: both fail the call
+  // (no dialog to stall on) and leave no stray window behind.
+  for (const [name, body] of [
+    ['empty-object.excalidraw', '{}'],
+    ['garbled.excalidraw', 'not json at all'],
+  ]) {
+    const bad = path.join(tmp, name)
+    writeFileSync(bad, body)
+    await expect(call('open_file', { path: bad })).rejects.toThrow(/Not a drawing Tabula can open/)
+    await expect.poll(countWindows).toBe(before)
+  }
+
+  // The window in front has a drawing, so the editor refuses to load over it.
+  const loadFileInto = (id: number, contents: string) =>
+    app.evaluate(
+      ({ BrowserWindow, ipcMain }, args) =>
+        new Promise<{ ok: boolean; error?: string }>((resolve) => {
+          const requestId = `e2e-${Date.now()}`
+          const onResponse = (_event: unknown, response: { id: string; ok: boolean; error?: string }) => {
+            if (response.id !== requestId) return
+            ipcMain.off('agent:response', onResponse)
+            resolve(response)
+          }
+          ipcMain.on('agent:response', onResponse)
+          BrowserWindow.fromId(args.id)?.webContents.send('agent:request', {
+            id: requestId,
+            tool: 'loadFile',
+            args: { path: '/tmp/never-written.excalidraw', contents: args.contents },
+          })
+        }),
+      { id, contents },
+    )
+  const drawn = (await sceneJson()).elements.length
+  expect(await loadFileInto(winId, drawing('intruder'))).toMatchObject({
+    ok: false,
+    error: 'This window is no longer blank',
+  })
+  expect((await sceneJson()).elements).toHaveLength(drawn)
+
+  // Concurrent opens, one file twice: each file ends up open in exactly one window.
+  const fileA = path.join(tmp, 'open-twice-a.excalidraw')
+  const fileB = path.join(tmp, 'open-twice-b.excalidraw')
+  writeFileSync(fileA, drawing('a'))
+  writeFileSync(fileB, drawing('b'))
+  const results = await Promise.all([
+    call('open_file', { path: fileA }),
+    call('open_file', { path: fileB }),
+    call('open_file', { path: fileA }),
+  ])
+  expect(results[2].some((c) => c.text?.includes('already open'))).toBe(true)
+  await expect.poll(async () => (await shownFiles()).filter((f) => f === fileA || f === fileB).length).toBe(2)
+  const shown = await shownFiles()
+  expect(shown.filter((f) => f === fileA)).toHaveLength(1)
+  expect(shown.filter((f) => f === fileB)).toHaveLength(1)
+  expect(await countWindows()).toBe(before + 2)
+
+  // Back to the drawing the later tests expect.
+  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.focus(), winId)
+})
+
+test('a drawing Finder could not open does not keep its path reserved', async () => {
+  const listIds = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.id))
+  const file = path.join(tmp, 'finder-open.excalidraw')
+  writeFileSync(file, '{}') // valid JSON, not a drawing: the window refuses it with an alert
+  const idsBefore = await listIds()
+  const pagesBefore = app.windows()
+  await app.evaluate(({ app: electronApp }, target) => {
+    electronApp.emit('open-file', { preventDefault() {} }, target)
+  }, file)
+  await expect.poll(async () => (await listIds()).length).toBe(idsBefore.length + 1)
+  const [finderId] = (await listIds()).filter((id) => !idsBefore.includes(id))
+  await expect.poll(() => app.windows().some((p) => !pagesBefore.includes(p))).toBe(true)
+  const finderPage = app.windows().find((p) => !pagesBefore.includes(p)) as Page
+  // The window refuses the file with a native alert; answer it here so it never
+  // sits on the screen.
+  finderPage.on('dialog', (dialog) => void dialog.dismiss())
+  await finderPage.waitForSelector('.excalidraw')
+  // Hand the window the file again now that its editor is certainly listening
+  // (the first delivery can beat the listener), so it takes the failure path.
+  await app.evaluate(
+    ({ BrowserWindow }, args) => {
+      BrowserWindow.fromId(args.id)?.webContents.send('file:opened', { path: args.file, contents: '{}' })
+    },
+    { id: finderId, file },
+  )
+
+  // Once the file is fixed an agent can open it. While the window's claim on
+  // the path stood, the call answered "already open" and loaded nothing.
+  writeFileSync(file, JSON.stringify({ type: 'excalidraw', version: 2, source: 'e2e', elements: [], appState: {}, files: {} }))
+  await expect
+    .poll(async () => (await call('open_file', { path: file })).some((c) => c.text?.startsWith('Opened')), { timeout: 10_000 })
+    .toBe(true)
+  // The failed window was reused, not a second one made.
+  expect((await listIds()).length).toBe(idsBefore.length + 1)
+
+  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.focus(), winId)
+})
+
+test('the Export image dialog opens on the whole board even with something selected', async () => {
+  // add_elements leaves what it adds selected, which Excalidraw's dialog
+  // would otherwise turn into an export of just that.
+  await call('add_elements', { elements: [{ type: 'rectangle', x: 0, y: 100, width: 120, height: 60 }] })
+  await expect.poll(async () => (await sceneJson()).elements.length).toBe(2)
+  await sendCommand('export-image')
+  const onlySelected = page.locator('input[name="exportOnlySelected"]')
+  await expect(onlySelected).toBeAttached()
+  await expect(onlySelected).not.toBeChecked()
+  // Still there for exporting just the selection.
+  await onlySelected.evaluate((el: HTMLInputElement) => el.click())
+  await expect(onlySelected).toBeChecked()
+  await page.keyboard.press('Escape')
+  await expect(onlySelected).toHaveCount(0)
+})
+
 test('an existing box takes a label from a double-click anywhere, or from the Label field', async () => {
-  await call('new_drawing', { discardChanges: true })
+  await inNewWindow(() => call('new_drawing'))
   const drawBox = async (x: number, y: number) => {
     // Focus the canvas (an empty spot left of the chat sidebar), so the R shortcut reaches it.
     await page.mouse.click(880, 600)
@@ -510,7 +700,7 @@ test('settings open from the menu, and nothing hit the CSP', async () => {
 
 test('Save asks for a name for an untitled autosave, moves it there, then saves in place', async () => {
   const dir = path.join(tmp, 'profile', 'Documents', 'Tabula')
-  await call('new_drawing', { discardChanges: true })
+  await inNewWindow(() => call('new_drawing'))
   await call('add_elements', { elements: [{ type: 'text', x: 0, y: 0, text: 'Needs a name' }] })
   await expect(page.locator('.titlebar-name')).toContainText('Untitled 20', { ignoreCase: true, timeout: 10_000 })
   const untitled = readdirSync(dir).filter((f) => readFileSync(path.join(dir, f), 'utf8').includes('Needs a name'))
@@ -535,7 +725,7 @@ test('Save asks for a name for an untitled autosave, moves it there, then saves 
   // writes it in place, and nothing deletes it.
   const lookalike = path.join(dir, 'Untitled 2026-01-01 10.00.excalidraw.md')
   writeFileSync(lookalike, readFileSync(named, 'utf8'))
-  await call('open_file', { path: lookalike })
+  await inNewWindow(() => call('open_file', { path: lookalike }))
   await call('add_elements', { elements: [{ type: 'text', x: 0, y: 200, text: 'Still mine' }] })
   await sendCommand('save')
   await expect.poll(() => readFileSync(lookalike, 'utf8')).toContain('Still mine')
@@ -549,7 +739,7 @@ test('untitled work autosaves to Documents/Tabula, and closing saves the last ed
     existsSync(dir) &&
     readdirSync(dir).some((f) => readFileSync(path.join(dir, f), 'utf8').includes(text))
 
-  await call('new_drawing', { discardChanges: true })
+  await inNewWindow(() => call('new_drawing'))
   await call('add_elements', { elements: [{ type: 'text', x: 0, y: 0, text: 'Autosaved draft' }] })
   await expect.poll(draftWith('Autosaved draft'), { timeout: 10_000 }).toBe(true)
   await expect(page.locator('.titlebar-name')).toContainText('Untitled 20', { ignoreCase: true })
@@ -557,8 +747,8 @@ test('untitled work autosaves to Documents/Tabula, and closing saves the last ed
   // Closed before autosave's pause is up: the close itself saves the edit.
   await call('add_elements', { elements: [{ type: 'text', x: 0, y: 100, text: 'Saved on close' }] })
   const edited = () =>
-    app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isDocumentEdited() ?? false)
+    app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.isDocumentEdited() ?? false, winId)
   await expect.poll(edited).toBe(true)
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.close(), winId)
   await expect.poll(draftWith('Saved on close'), { timeout: 10_000 }).toBe(true)
 })

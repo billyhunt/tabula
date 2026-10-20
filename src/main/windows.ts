@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,6 +62,31 @@ const saveBeforeClose = async (win: BrowserWindow): Promise<boolean> => {
   return response === 1
 }
 
+// The file a window was made, or taken over, to open. Until the editor reports
+// that file as its title the window looks blank, so agents must not take it
+// over and a second open of the same file must not make another window. A
+// claim expires: opening a local file takes milliseconds, and one the editor
+// never confirms (a drawing it refused, with an alert) must not keep a blank
+// window, or that path, reserved for good.
+const CLAIM_MS = 30_000
+const claimedFile = new WeakMap<BrowserWindow, { file: string; at: number }>()
+
+/** The file `win` is still expected to show, if its claim has not expired. */
+const claimOf = (win: BrowserWindow) => {
+  const claim = claimedFile.get(win)
+  return claim && Date.now() - claim.at < CLAIM_MS ? claim.file : undefined
+}
+
+/** Marks `win` as about to show `filePath`. */
+export const claimFile = (win: BrowserWindow, filePath: string) =>
+  claimedFile.set(win, { file: filePath, at: Date.now() })
+
+/** Ends the claim once the editor reports its file; the represented file takes over. */
+export const releaseClaim = (win: BrowserWindow) => claimedFile.delete(win)
+
+/** Whether `win` has a claimed file the editor has not yet confirmed. */
+export const hasPendingFile = (win: BrowserWindow) => claimOf(win) !== undefined
+
 export const createWindow = (filePath?: string) => {
   const win = new BrowserWindow({
     width: 1280,
@@ -120,6 +146,7 @@ export const createWindow = (filePath?: string) => {
   win.webContents.on('will-navigate', (event) => event.preventDefault())
 
   if (filePath) {
+    claimFile(win, filePath)
     win.webContents.once('did-finish-load', () => void openInWindow(win, filePath))
   }
 
@@ -133,7 +160,13 @@ export const createWindow = (filePath?: string) => {
 
 /** Reads a drawing from disk and hands it to the window to load. */
 export const openInWindow = async (win: BrowserWindow, filePath: string) => {
-  const file: OpenedFile = { path: filePath, contents: await readFile(filePath, 'utf8') }
+  let file: OpenedFile
+  try {
+    file = { path: filePath, contents: await readFile(filePath, 'utf8') }
+  } catch (err) {
+    releaseClaim(win)
+    throw err
+  }
   win.webContents.send(Channels.fileOpened, file)
   app.addRecentDocument(filePath)
 }
@@ -144,6 +177,27 @@ const editors = new Set<BrowserWindow>()
 
 /** Open drawing windows, oldest first. */
 export const editorWindows = (): BrowserWindow[] => [...editors]
+
+const realPath = (file: string) => {
+  try {
+    return realpathSync.native(file)
+  } catch {
+    return path.normalize(file)
+  }
+}
+
+/**
+ * The drawing window showing `target`, if any: by the file it was claimed to
+ * open while the editor has not confirmed it, else by the file it represents.
+ * Two windows on one file would autosave over each other.
+ */
+export const windowOnFile = (target: string): BrowserWindow | undefined => {
+  const wanted = realPath(target)
+  return editorWindows().find((win) => {
+    const shown = claimOf(win) ?? win.getRepresentedFilename()
+    return shown !== '' && realPath(shown) === wanted
+  })
+}
 
 // Agents act while the user sits in a terminal, when no window has focus, so
 // "the window" means the one focused last, not merely any open window.

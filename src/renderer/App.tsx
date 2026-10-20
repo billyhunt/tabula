@@ -13,6 +13,7 @@ import type {
   ExcalidrawImperativeAPI,
 } from '@excalidraw/excalidraw/types'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
+import { WINDOW_NOT_BLANK } from '../shared/agentTools'
 import type { OpenedFile } from '../shared/ipc'
 import { ChatSidebar, useChat } from './agent/Chat'
 import { SettingsDialog, useSettingsDialog } from './agent/SettingsDialog'
@@ -112,9 +113,11 @@ export const App = () => {
   /**
    * Puts file contents on the canvas. Throws when the contents can't be read
    * as a drawing; the envelope only changes once parsing has succeeded.
+   * `beforeCommit` runs after parsing, right before the scene is replaced, and
+   * may throw to stop it.
    */
   const applyContents = useCallback(
-    async (contents: string, formatPath: string) => {
+    async (contents: string, formatPath: string, beforeCommit?: () => void) => {
       if (!api) throw new Error('The editor is still starting')
       let json = contents
       let nextEnvelope = newEnvelope()
@@ -125,6 +128,7 @@ export const App = () => {
       }
       const blob = new Blob([json], { type: 'application/json' })
       const scene = await loadFromBlob(blob, api.getAppState(), api.getSceneElements())
+      beforeCommit?.()
       envelope.current = nextEnvelope
       api.updateScene({
         elements: scene.elements,
@@ -141,11 +145,30 @@ export const App = () => {
   )
 
   const load = useCallback(
-    async (file: OpenedFile) => {
+    async (file: OpenedFile, options?: { throwOnError?: boolean; intoBlankOnly?: boolean }) => {
       if (!api) return
+      let claimed = false
+      // Checked right before the scene is replaced, after the parse's await,
+      // so nothing drawn meanwhile is lost. Taking the path in the same
+      // synchronous step keeps a second load from also passing.
+      const claimBlank = options?.intoBlankOnly
+        ? () => {
+            if (pathRef.current || api.getSceneElements().length) throw new Error(WINDOW_NOT_BLANK)
+            pathRef.current = file.path
+            claimed = true
+          }
+        : undefined
       try {
-        await applyContents(file.contents, file.path)
+        await applyContents(file.contents, file.path, claimBlank)
       } catch (err) {
+        if (claimed) pathRef.current = null
+        // An agent waiting on the load gets the error; a modal would stall it.
+        if (options?.throwOnError) {
+          if ((err as Error).message === WINDOW_NOT_BLANK) throw err
+          throw new Error(`Not a drawing Tabula can open: ${(err as Error).message}`)
+        }
+        // Retire main's claim on this file before the modal blocks the window.
+        window.tabula.fileLoadFailed()
         window.alert(`Couldn't open ${basename(file.path)}: ${(err as Error).message}`)
         return
       }
@@ -265,8 +288,8 @@ export const App = () => {
   }, [readyToReplace, load])
 
   const newDrawing = useCallback(
-    async (options?: { force?: boolean }) => {
-      if (!api || (!options?.force && !(await readyToReplace()))) return
+    async () => {
+      if (!api || !(await readyToReplace())) return
       // resetScene restores Excalidraw's defaults, which would close the chat.
       const { openSidebar, defaultSidebarDockedPreference } = api.getAppState()
       api.resetScene()
