@@ -46,7 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autosave: true,
   showChat: true,
   agent: {
-    mcpEnabled: false,
+    mcpEnabled: true,
     mcpPort: 7337,
     provider: 'anthropic',
     models: {
