@@ -46,6 +46,8 @@
   --color-slider-track: var(--selection);
   --color-slider-thumb: var(--text);
 
+  /* Still needed: the zoom and undo button groups round their outer corners
+     with these at !important, which outranks the forced rule below. */
   --border-radius-md: 0;
   --border-radius-lg: 0;
   --shadow-island: none;
@@ -78,6 +80,29 @@
   --color-slider-thumb: var(--text);
 }
 
+/*
+ * Every corner square. Excalidraw also rounds about sixty things with fixed
+ * values its radius variables don't reach (the sidebar's tab strip around
+ * square tab buttons, the context menu, switches, key caps, swatches), at
+ * specificities several classes deep, so this one property is forced rather
+ * than chased rule by rule. The tooltip and the swatch drag ghost are mounted
+ * on <body>, outside the scopes above. Shapes on the canvas are drawn, not
+ * styled, so their own rounding is untouched.
+ */
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) *,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) *::before,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) *::after,
+.excalidraw-tooltip,
+.excalidraw-color-dnd-ghost-swatch {
+  border-radius: 0 !important;
+}
+
+/* Kept apart: a selector Chromium didn't know would void the rule above. */
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) ::-webkit-slider-thumb,
+:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) ::-webkit-scrollbar-thumb {
+  border-radius: 0 !important;
+}
+
 /* Hard rules on every floating island, menu and dialog. */
 :is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .Island,
 :is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .dropdown-menu-container,
@@ -85,20 +110,10 @@
 :is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .popover {
   border: 2px solid var(--border);
   box-shadow: none;
-  border-radius: 0;
 }
 
 :is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .App-toolbar .Island {
   border-width: var(--rule);
-}
-
-/* Square tool buttons, mono labels. */
-:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .ToolIcon__icon,
-:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .ToolIcon,
-:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) button,
-:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .color-picker__button,
-:is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) input {
-  border-radius: 0;
 }
 
 :is(.canvas .excalidraw, .excalidraw.excalidraw-modal-container) .ToolIcon__keybinding,
@@ -147,7 +162,6 @@
   color: var(--text);
   background: var(--bg);
   border: 2px solid var(--border);
-  border-radius: 0;
   resize: vertical;
 }
 
