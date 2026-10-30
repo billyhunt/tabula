@@ -73,7 +73,18 @@ describe('desktop lock', () => {
 
   it('says so when something else holds the port', async () => {
     const port = await freePort()
-    const other = net.createServer((socket) => socket.end('HTTP/1.1 200 OK\r\n\r\n')).listen({ host: '127.0.0.1', port })
+    // JSON is not enough: only a reply naming a pid is one of ours.
+    const other = net.createServer((socket) => socket.end('{"ok":true}')).listen({ host: '127.0.0.1', port })
+    await once(other, 'listening')
+    cleanups.push(() => other.close())
+    await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`another program listening on 127.0.0.1:${port}`)
+  })
+
+  it('is not held past its wait by a listener that never answers', async () => {
+    const port = await freePort()
+    // An HTTP-style server waits for the client to speak first. Only the
+    // module's real 2-second cut-off ends this, so the test takes that long.
+    const other = net.createServer((socket) => socket.on('error', () => undefined)).listen({ host: '127.0.0.1', port })
     await once(other, 'listening')
     cleanups.push(() => other.close())
     await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`another program listening on 127.0.0.1:${port}`)
