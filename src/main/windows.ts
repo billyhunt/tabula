@@ -62,30 +62,18 @@ const saveBeforeClose = async (win: BrowserWindow): Promise<boolean> => {
   return response === 1
 }
 
-// The file a window was made, or taken over, to open. Until the editor reports
+// The file a window was made to open (from Finder). Until the editor reports
 // that file as its title the window looks blank, so agents must not take it
-// over and a second open of the same file must not make another window. A
-// claim expires: opening a local file takes milliseconds, and one the editor
-// never confirms (a drawing it refused, with an alert) must not keep a blank
-// window, or that path, reserved for good.
-const CLAIM_MS = 30_000
-const claimedFile = new WeakMap<BrowserWindow, { file: string; at: number }>()
+// over and a second open of the same file must not make another window. The
+// claim ends when the editor reports the file, says it could not load it
+// (fileLoadFailed), or main could not read it.
+const claimedFile = new WeakMap<BrowserWindow, { file: string; taken: boolean }>()
 
-/** The file `win` is still expected to show, if its claim has not expired. */
-const claimOf = (win: BrowserWindow) => {
-  const claim = claimedFile.get(win)
-  return claim && Date.now() - claim.at < CLAIM_MS ? claim.file : undefined
-}
-
-/** Marks `win` as about to show `filePath`. */
-export const claimFile = (win: BrowserWindow, filePath: string) =>
-  claimedFile.set(win, { file: filePath, at: Date.now() })
-
-/** Ends the claim once the editor reports its file; the represented file takes over. */
+/** Ends the claim; the file the window represents takes over. */
 export const releaseClaim = (win: BrowserWindow) => claimedFile.delete(win)
 
 /** Whether `win` has a claimed file the editor has not yet confirmed. */
-export const hasPendingFile = (win: BrowserWindow) => claimOf(win) !== undefined
+export const hasPendingFile = (win: BrowserWindow) => claimedFile.has(win)
 
 export const createWindow = (filePath?: string) => {
   const win = new BrowserWindow({
@@ -145,10 +133,7 @@ export const createWindow = (filePath?: string) => {
   })
   win.webContents.on('will-navigate', (event) => event.preventDefault())
 
-  if (filePath) {
-    claimFile(win, filePath)
-    win.webContents.once('did-finish-load', () => void openInWindow(win, filePath))
-  }
+  if (filePath) claimedFile.set(win, { file: filePath, taken: false })
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void win.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -158,17 +143,25 @@ export const createWindow = (filePath?: string) => {
   return win
 }
 
-/** Reads a drawing from disk and hands it to the window to load. */
-export const openInWindow = async (win: BrowserWindow, filePath: string) => {
+/**
+ * The drawing this window was made to open, read from disk, or null when it
+ * has none or already took it. The editor asks once it is ready to listen, so
+ * the file cannot arrive before it can be loaded. A file that cannot be read
+ * ends the claim, so the window is just an empty one.
+ */
+export const takePendingFile = async (win: BrowserWindow): Promise<OpenedFile | null> => {
+  const claim = claimedFile.get(win)
+  if (!claim || claim.taken) return null
+  claim.taken = true
   let file: OpenedFile
   try {
-    file = { path: filePath, contents: await readFile(filePath, 'utf8') }
+    file = { path: claim.file, contents: await readFile(claim.file, 'utf8') }
   } catch (err) {
     releaseClaim(win)
     throw err
   }
-  win.webContents.send(Channels.fileOpened, file)
-  app.addRecentDocument(filePath)
+  app.addRecentDocument(claim.file)
+  return file
 }
 
 // Drawing windows only. Hidden helpers (the PDF printer) are BrowserWindows
@@ -194,7 +187,7 @@ const realPath = (file: string) => {
 export const windowOnFile = (target: string): BrowserWindow | undefined => {
   const wanted = realPath(target)
   return editorWindows().find((win) => {
-    const shown = claimOf(win) ?? win.getRepresentedFilename()
+    const shown = claimedFile.get(win)?.file ?? win.getRepresentedFilename()
     return shown !== '' && realPath(shown) === wanted
   })
 }

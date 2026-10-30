@@ -19,7 +19,8 @@ import { getSettings, onSettingsChanged } from '../settings'
 import { createWindow, focusedWindow, hasPendingFile } from '../windows'
 import { callCanvasTool, reportActivity } from './bridge'
 import { checkMcpRequest } from './mcpChecks'
-import { FILE_TOOLS, type BlankWindow, type ToolWindows } from './mcpFileTools'
+import { makeBlankWindow } from './blankWindow'
+import { FILE_TOOLS, type ToolWindows } from './mcpFileTools'
 
 /**
  * The local MCP server: lets agents such as Claude Code draw on the open
@@ -109,34 +110,17 @@ const canvasWindow = async (): Promise<BrowserWindow> => {
 }
 
 /**
- * A window for a drawing of the agent's own, so the user's open drawing is
- * never replaced: the current window when it holds nothing yet, else a new
- * one (always a new one with `fresh`). It is the most recently focused window
- * afterwards, but later calls follow focus, so it is only the agent's own
- * until the user clicks another window.
+ * A window for a drawing of the agent's own. It is the most recently focused
+ * window afterwards, but later calls follow focus, so it is only the agent's
+ * own until the user clicks another window.
  */
-const blankWindow = async (options?: { fresh?: boolean }): Promise<BlankWindow> => {
-  if (!options?.fresh) {
-    const current = await canvasWindow()
-    // A window that cannot answer (stuck in a dialog, say) counts as occupied:
-    // a new window is safe, replacing what is in it is not.
-    const blank =
-      !hasPendingFile(current) &&
-      (await callCanvasTool(current, 'isBlank', {}, 5_000).then(
-        ({ json }) => blankState.parse(json).blank,
-        () => false,
-      ))
-    if (blank) return { win: current, created: false }
-  }
-  const win = createWindow()
-  try {
-    await editorReady(win)
-  } catch (err) {
-    if (!win.isDestroyed()) win.close()
-    throw err
-  }
-  return { win, created: true }
-}
+const blankWindow = makeBlankWindow({
+  current: canvasWindow,
+  create: createWindow,
+  editorReady,
+  hasPendingFile,
+  isBlank: async (win) => blankState.parse((await callCanvasTool(win, 'isBlank', {}, 5_000)).json).blank,
+})
 
 const WINDOWS: ToolWindows = { current: canvasWindow, blank: blankWindow }
 

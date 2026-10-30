@@ -60,6 +60,23 @@ const inNewWindow = async (open: () => Promise<unknown>) => {
   await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.setContentSize(1280, 820), winId)
 }
 
+/**
+ * Brings a window to the front and waits until it has focus, asking again
+ * while something else (another app, a screenshot tool) holds it. Agent calls
+ * go to the window in front, so tests switch windows through this.
+ */
+const focusWindow = (id: number) =>
+  expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }, target) => {
+        const win = BrowserWindow.fromId(target)
+        if (!win) return false
+        if (!win.isFocused()) win.focus()
+        return win.isFocused()
+      }, id),
+    )
+    .toBe(true)
+
 /** Makes main's Save dialog answer `filePath` without showing, counting calls. */
 const stubSaveDialog = (filePath: string) =>
   app.evaluate(({ dialog }, answer) => {
@@ -460,8 +477,6 @@ test("an agent's new_drawing leaves the open drawing alone, and reuses a window 
   const drawn = (await sceneJson()).elements.length
   expect(drawn).toBeGreaterThan(0)
   const drawnId = winId
-  const focus = (id: number) =>
-    app.evaluate(({ BrowserWindow }, target) => BrowserWindow.fromId(target)?.focus(), id)
 
   await inNewWindow(() => call('new_drawing'))
   const blankId = winId
@@ -474,11 +489,11 @@ test("an agent's new_drawing leaves the open drawing alone, and reuses a window 
   expect(app.windows()).toHaveLength(windows)
 
   // The first drawing was not replaced.
-  await focus(drawnId)
+  await focusWindow(drawnId)
   await expect.poll(async () => (await sceneJson()).elements.length).toBe(drawn)
 
   // Later calls draw in the new window once it is the one in front.
-  await focus(blankId)
+  await focusWindow(blankId)
   await call('add_elements', { elements: [{ type: 'text', x: 0, y: 0, text: 'Second drawing' }] })
   await expect.poll(async () => (await sceneJson()).elements.length).toBe(1)
 })
@@ -558,34 +573,49 @@ test("an agent's open_file refuses unreadable drawings, never opens a file twice
   expect(await countWindows()).toBe(before + 2)
 
   // Back to the drawing the later tests expect.
-  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.focus(), winId)
+  await focusWindow(winId)
+})
+
+test('a drawing opened from Finder always loads, and agents see it as open meanwhile', async () => {
+  const listIds = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.id))
+  const shownFiles = () =>
+    app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.getRepresentedFilename()))
+  const file = path.join(tmp, 'finder-valid.excalidraw')
+  writeFileSync(file, JSON.stringify({ type: 'excalidraw', version: 2, source: 'e2e', elements: [], appState: {}, files: {} }))
+  const before = (await listIds()).length
+  await app.evaluate(({ app: electronApp }, target) => {
+    electronApp.emit('open-file', { preventDefault() {} }, target)
+  }, file)
+  // The window exists but has not loaded anything yet: an agent asking for the
+  // same file is told it is open, and no second window is made for it.
+  const reply = await call('open_file', { path: file })
+  expect(reply.some((c) => c.text?.includes('already open'))).toBe(true)
+  // The window fetches its file when its editor is ready, however early the
+  // window was made, so the file always ends up loaded.
+  await expect.poll(async () => (await shownFiles()).includes(file), { timeout: 10_000 }).toBe(true)
+  expect((await listIds()).length).toBe(before + 1)
+  await focusWindow(winId)
 })
 
 test('a drawing Finder could not open does not keep its path reserved', async () => {
   const listIds = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.id))
   const file = path.join(tmp, 'finder-open.excalidraw')
   writeFileSync(file, '{}') // valid JSON, not a drawing: the window refuses it with an alert
-  const idsBefore = await listIds()
-  const pagesBefore = app.windows()
+  // The window refuses the file with a native alert; answer it here so it never
+  // sits on the screen, and note that it came.
+  let refused = false
+  const answer = (p: Page) =>
+    p.on('dialog', (dialog) => {
+      refused = true
+      void dialog.dismiss()
+    })
+  app.on('window', answer)
+  const before = (await listIds()).length
   await app.evaluate(({ app: electronApp }, target) => {
     electronApp.emit('open-file', { preventDefault() {} }, target)
   }, file)
-  await expect.poll(async () => (await listIds()).length).toBe(idsBefore.length + 1)
-  const [finderId] = (await listIds()).filter((id) => !idsBefore.includes(id))
-  await expect.poll(() => app.windows().some((p) => !pagesBefore.includes(p))).toBe(true)
-  const finderPage = app.windows().find((p) => !pagesBefore.includes(p)) as Page
-  // The window refuses the file with a native alert; answer it here so it never
-  // sits on the screen.
-  finderPage.on('dialog', (dialog) => void dialog.dismiss())
-  await finderPage.waitForSelector('.excalidraw')
-  // Hand the window the file again now that its editor is certainly listening
-  // (the first delivery can beat the listener), so it takes the failure path.
-  await app.evaluate(
-    ({ BrowserWindow }, args) => {
-      BrowserWindow.fromId(args.id)?.webContents.send('file:opened', { path: args.file, contents: '{}' })
-    },
-    { id: finderId, file },
-  )
+  await expect.poll(() => refused, { timeout: 10_000 }).toBe(true)
+  app.off('window', answer)
 
   // Once the file is fixed an agent can open it. While the window's claim on
   // the path stood, the call answered "already open" and loaded nothing.
@@ -594,9 +624,9 @@ test('a drawing Finder could not open does not keep its path reserved', async ()
     .poll(async () => (await call('open_file', { path: file })).some((c) => c.text?.startsWith('Opened')), { timeout: 10_000 })
     .toBe(true)
   // The failed window was reused, not a second one made.
-  expect((await listIds()).length).toBe(idsBefore.length + 1)
+  expect((await listIds()).length).toBe(before + 1)
 
-  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.focus(), winId)
+  await focusWindow(winId)
 })
 
 test('the Export image dialog opens on the whole board even with something selected', async () => {

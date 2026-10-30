@@ -332,9 +332,14 @@ export const App = () => {
 
   const loadRef = useRef(load)
   loadRef.current = load
+  // A window made to open a drawing (from Finder) asks for it once the editor
+  // can load it, so the file cannot arrive before anything is listening.
   useEffect(() => {
     if (!api) return
-    return window.tabula.onFileOpened((file) => void loadRef.current(file))
+    window.tabula.takePendingFile().then(
+      (file) => file && void loadRef.current(file),
+      (err: unknown) => window.alert(`Couldn't open the file: ${err instanceof Error ? err.message : String(err)}`),
+    )
   }, [api])
 
   return (

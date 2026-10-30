@@ -16,7 +16,7 @@ export const Channels = {
   setTitle: 'window:set-title',
   fileLoadFailed: 'window:file-load-failed',
   menuCommand: 'menu:command',
-  fileOpened: 'file:opened',
+  takePendingFile: 'file:take-pending',
   fullscreen: 'window:fullscreen',
 
   settingsGet: 'settings:get',
@@ -232,7 +232,8 @@ export interface TabulaApi {
   /** Tells main a file it handed this window could not be loaded, so the window no longer counts as showing it. */
   fileLoadFailed(): void
   onMenuCommand(handler: (command: MenuCommand) => void): () => void
-  onFileOpened(handler: (file: OpenedFile) => void): () => void
+  /** The drawing this window was opened for (from Finder), once; null if none. Ask when ready to load it. */
+  takePendingFile(): Promise<OpenedFile | null>
   onFullscreen(handler: (fullscreen: boolean) => void): () => void
 
   settings: {
