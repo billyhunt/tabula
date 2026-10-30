@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
-import { Channels, type MenuCommand, type OpenedFile } from '../shared/ipc'
+import { Channels, type MenuCommand, type PendingFile } from '../shared/ipc'
+import { createClaims } from './claims'
 import { RENDERER_URL } from './rendererProtocol'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -62,18 +63,16 @@ const saveBeforeClose = async (win: BrowserWindow): Promise<boolean> => {
   return response === 1
 }
 
-// The file a window was made to open (from Finder). Until the editor reports
-// that file as its title the window looks blank, so agents must not take it
-// over and a second open of the same file must not make another window. The
-// claim ends when the editor reports the file, says it could not load it
-// (fileLoadFailed), or main could not read it.
-const claimedFile = new WeakMap<BrowserWindow, { file: string; taken: boolean }>()
+const claims = createClaims<BrowserWindow>()
 
 /** Ends the claim; the file the window represents takes over. */
-export const releaseClaim = (win: BrowserWindow) => claimedFile.delete(win)
+export const releaseClaim = (win: BrowserWindow) => claims.release(win)
+
+/** Marks `win` as having `file` loaded into it by an agent, until the editor reports it. */
+export const claimForLoad = (win: BrowserWindow, file: string) => claims.loading(win, file)
 
 /** Whether `win` has a claimed file the editor has not yet confirmed. */
-export const hasPendingFile = (win: BrowserWindow) => claimedFile.has(win)
+export const hasPendingFile = (win: BrowserWindow) => claims.fileOf(win) !== undefined
 
 export const createWindow = (filePath?: string) => {
   const win = new BrowserWindow({
@@ -132,8 +131,10 @@ export const createWindow = (filePath?: string) => {
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (event) => event.preventDefault())
+  // A reload before the editor reported its file asks for the file again.
+  win.webContents.on('did-start-loading', () => claims.reloaded(win))
 
-  if (filePath) claimedFile.set(win, { file: filePath, taken: false })
+  if (filePath) claims.expect(win, filePath)
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void win.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -144,24 +145,23 @@ export const createWindow = (filePath?: string) => {
 }
 
 /**
- * The drawing this window was made to open, read from disk, or null when it
- * has none or already took it. The editor asks once it is ready to listen, so
- * the file cannot arrive before it can be loaded. A file that cannot be read
- * ends the claim, so the window is just an empty one.
+ * The drawing this window was made to open, read from disk; null when it has
+ * none or already took it on this page load. The editor asks once it is ready
+ * to listen, so the file cannot arrive before it can be loaded. A file that
+ * cannot be read ends the claim and comes back as an error for the editor to
+ * show, so the window is just an empty one.
  */
-export const takePendingFile = async (win: BrowserWindow): Promise<OpenedFile | null> => {
-  const claim = claimedFile.get(win)
-  if (!claim || claim.taken) return null
-  claim.taken = true
-  let file: OpenedFile
+export const takePendingFile = async (win: BrowserWindow): Promise<PendingFile | null> => {
+  const file = claims.take(win)
+  if (file === undefined) return null
   try {
-    file = { path: claim.file, contents: await readFile(claim.file, 'utf8') }
+    const contents = await readFile(file, 'utf8')
+    app.addRecentDocument(file)
+    return { path: file, contents }
   } catch (err) {
     releaseClaim(win)
-    throw err
+    return { path: file, error: err instanceof Error ? err.message : String(err) }
   }
-  app.addRecentDocument(claim.file)
-  return file
 }
 
 // Drawing windows only. Hidden helpers (the PDF printer) are BrowserWindows
@@ -187,7 +187,7 @@ const realPath = (file: string) => {
 export const windowOnFile = (target: string): BrowserWindow | undefined => {
   const wanted = realPath(target)
   return editorWindows().find((win) => {
-    const shown = claimedFile.get(win)?.file ?? win.getRepresentedFilename()
+    const shown = claims.fileOf(win) ?? win.getRepresentedFilename()
     return shown !== '' && realPath(shown) === wanted
   })
 }

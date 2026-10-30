@@ -1,7 +1,6 @@
 import { app, type BrowserWindow } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { setTimeout as sleep } from 'node:timers/promises'
 import {
   exportInput,
   newDrawingInput,
@@ -14,7 +13,7 @@ import {
 } from '../../shared/agentTools'
 import type { AgentToolResult } from '../../shared/ipc'
 import { writePdf } from '../exports'
-import { windowOnFile } from '../windows'
+import { claimForLoad, releaseClaim, windowOnFile } from '../windows'
 import type { BlankWindow } from './blankWindow'
 import { callCanvasTool } from './bridge'
 import { checkExportPath, checkOpenPath, checkSavePath } from './mcpChecks'
@@ -34,8 +33,9 @@ export interface ToolWindows {
 
 /**
  * `open_file` and `new_drawing` calls run one at a time, so a second call for
- * the same file finds the first one's window instead of opening the file
- * twice, and a new drawing never shares a window a file is being opened into.
+ * the same file finds the first one's window (or its claim on one) instead of
+ * opening the file twice, and a new drawing never shares a window a file is
+ * being opened into.
  */
 let windowQueue: Promise<unknown> = Promise.resolve()
 
@@ -60,9 +60,13 @@ const openFile = async (args: unknown, windows: ToolWindows): Promise<AgentToolR
   // own. Loading through the bridge (rather than a pending file the window
   // fetches) means the agent's next call already sees the new drawing.
   const openIn = async (slot: BlankWindow) => {
+    // The window reports its file as its title only after loading; the claim
+    // stands for it until then, so the next queued call finds this window.
+    claimForLoad(slot.win, target)
     try {
       await callCanvasTool(slot.win, 'loadFile', { path: target, contents }, 60_000)
     } catch (err) {
+      releaseClaim(slot.win)
       // A file that would not load must not leave an empty window behind.
       if (slot.created && !slot.win.isDestroyed()) slot.win.close()
       throw err
@@ -76,12 +80,6 @@ const openFile = async (args: unknown, windows: ToolWindows): Promise<AgentToolR
     // The window was blank a moment ago but has a drawing now: leave it be.
     if (!(err instanceof Error && err.message === WINDOW_NOT_BLANK)) throw err
     slot = await openIn(await windows.blank({ fresh: true }))
-  }
-  // The window reports its file as its title a moment after loading. Wait for
-  // it, so the next queued call finds this window by that file.
-  const deadline = Date.now() + 3_000
-  while (!slot.win.isDestroyed() && slot.win.getRepresentedFilename() !== target && Date.now() < deadline) {
-    await sleep(20)
   }
   app.addRecentDocument(target)
   return { text: `Opened ${path.basename(target)} in ${slot.created ? 'a new' : 'an empty'} window` }

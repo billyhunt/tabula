@@ -8,8 +8,12 @@ export interface BlankWindow<W = BrowserWindow> {
 
 /** What choosing a window needs from the app; faked in tests. */
 export interface BlankWindowDeps<W> {
-  /** The window agents act on now. */
-  current: () => Promise<W>
+  /**
+   * The window agents act on now, ready to answer, or undefined when none is
+   * open. Never opens one: a window made here belongs to this call and must
+   * be cleaned up by it.
+   */
+  current: () => Promise<W | undefined>
   /** Opens a window. */
   create: () => W
   /** Resolves once a window's editor is listening; rejects if it never does. */
@@ -32,7 +36,8 @@ export const makeBlankWindow =
       const current = await deps.current()
       // A window that cannot answer (stuck in a dialog, say) counts as occupied:
       // a new window is safe, replacing what is in it is not.
-      const blank = !deps.hasPendingFile(current) && (await deps.isBlank(current).catch(() => false))
+      const blank =
+        current !== undefined && !deps.hasPendingFile(current) && (await deps.isBlank(current).catch(() => false))
       if (blank) return { win: current, created: false }
     }
     const win = deps.create()

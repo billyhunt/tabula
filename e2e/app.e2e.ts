@@ -629,6 +629,32 @@ test('a drawing Finder could not open does not keep its path reserved', async ()
   await focusWindow(winId)
 })
 
+test('a drawing Finder could not read says so, and does not keep its path reserved', async () => {
+  const listIds = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.id))
+  const file = path.join(tmp, 'finder-missing.excalidraw') // not written yet: main cannot read it
+  let message = ''
+  const answer = (p: Page) =>
+    p.on('dialog', (dialog) => {
+      message = dialog.message()
+      void dialog.dismiss()
+    })
+  app.on('window', answer)
+  const before = (await listIds()).length
+  await app.evaluate(({ app: electronApp }, target) => {
+    electronApp.emit('open-file', { preventDefault() {} }, target)
+  }, file)
+  await expect.poll(() => message, { timeout: 10_000 }).toContain("Couldn't open finder-missing.excalidraw")
+  app.off('window', answer)
+
+  writeFileSync(file, JSON.stringify({ type: 'excalidraw', version: 2, source: 'e2e', elements: [], appState: {}, files: {} }))
+  const reply = await call('open_file', { path: file })
+  expect(reply.some((c) => c.text?.startsWith('Opened'))).toBe(true)
+  // The window that could not read it was reused, not a second one made.
+  expect((await listIds()).length).toBe(before + 1)
+
+  await focusWindow(winId)
+})
+
 test('the Export image dialog opens on the whole board even with something selected', async () => {
   // add_elements leaves what it adds selected, which Excalidraw's dialog
   // would otherwise turn into an export of just that.

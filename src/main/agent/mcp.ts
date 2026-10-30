@@ -24,8 +24,8 @@ import { FILE_TOOLS, type ToolWindows } from './mcpFileTools'
 
 /**
  * The local MCP server: lets agents such as Claude Code draw on the open
- * canvas. Off until the user turns it on; listens on 127.0.0.1 only and needs
- * a bearer token kept in userData.
+ * canvas. On by default (the user can turn it off); listens on 127.0.0.1 only
+ * and needs a bearer token kept in userData.
  */
 
 const MCP_PATH = '/mcp'
@@ -115,7 +115,13 @@ const canvasWindow = async (): Promise<BrowserWindow> => {
  * own until the user clicks another window.
  */
 const blankWindow = makeBlankWindow({
-  current: canvasWindow,
+  // The window in front if there is one; the agent's own window is made, and
+  // cleaned up on failure, by makeBlankWindow.
+  current: async () => {
+    const win = focusedWindow()
+    if (win?.webContents.isLoading()) await editorReady(win)
+    return win
+  },
   create: createWindow,
   editorReady,
   hasPendingFile,

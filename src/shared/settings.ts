@@ -3,7 +3,7 @@
 import { PROVIDER_INFO, type Provider } from './providers'
 
 export interface AgentSettings {
-  /** The local MCP server is off until the user turns it on. */
+  /** The local MCP server; on by default, and the user can turn it off. */
   mcpEnabled: boolean
   mcpPort: number
   /** Service the chat and Text to diagram call. Keys live in main's key store, not here. */

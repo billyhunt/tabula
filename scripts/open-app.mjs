@@ -23,12 +23,12 @@ import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { replaceApp } from './replace-app.mjs'
+import { tabulaExecutable } from './tabula-process.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const BUILD_DIRS = ['release', 'release-next']
 const INSTALLED = '/Applications/Tabula.app'
 const QUIT_WAIT_MS = 30_000
-const EXECUTABLE = 'Tabula.app/Contents/MacOS/Tabula'
 // `npm run dev` runs this branded Electron binary, with arguments.
 const DEV_ELECTRON = path.join(root, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const install = process.argv.includes('--install')
@@ -54,22 +54,19 @@ if (!newest) {
 const target = install ? INSTALLED : newest.app
 const targetExecutable = path.join(target, 'Contents', 'MacOS', 'Tabula')
 
-/** Whether a `ps` command line is a Tabula: a packaged copy, or with --install this repo's dev Electron. */
-const isCopy = (command) =>
-  command.endsWith(EXECUTABLE) ||
-  (install && (command === DEV_ELECTRON || command.startsWith(`${DEV_ELECTRON} `)))
-
 /** Every Tabula running, wherever it lives, with when it started. */
 const running = () =>
   execFileSync('ps', ['-axo', 'pid=,lstart=,command='], { encoding: 'utf8' })
     .split('\n')
     .map((line) => /^\s*(\d+)\s+(\w{3} \w{3}\s+\d+ [\d:]+ \d{4})\s+(.*)$/.exec(line))
-    .filter((match) => match && isCopy(match[3]))
+    .filter(Boolean)
     .map((match) => ({
       pid: Number(match[1]),
       startedAt: Date.parse(match[2]),
-      executable: match[3],
+      // With --install this repo's dev Electron counts too: it is Tabula.
+      executable: tabulaExecutable(match[3], install ? DEV_ELECTRON : undefined),
     }))
+    .filter((p) => p.executable)
 
 const alive = (pid) => {
   try {

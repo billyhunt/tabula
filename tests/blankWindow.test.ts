@@ -88,4 +88,23 @@ describe('makeBlankWindow', () => {
     expect(made).toHaveLength(1)
     expect(made[0].closed).toBe(true)
   })
+
+  it('with no window open, opens one of its own rather than borrowing one', async () => {
+    const { made, asked, blank } = setup({ current: async () => undefined })
+    const slot = await blank()
+    expect(slot).toEqual({ win: made[0], created: true })
+    expect(asked).toEqual([])
+  })
+
+  it('with no window open, closes the one it opened if its editor never comes up', async () => {
+    const { made, blank } = setup({
+      current: async () => undefined,
+      editorReady: async () => {
+        throw new Error('editor never answered')
+      },
+    })
+    await expect(blank()).rejects.toThrow('editor never answered')
+    expect(made).toHaveLength(1)
+    expect(made[0].closed).toBe(true)
+  })
 })

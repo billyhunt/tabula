@@ -336,10 +336,11 @@ export const App = () => {
   // can load it, so the file cannot arrive before anything is listening.
   useEffect(() => {
     if (!api) return
-    window.tabula.takePendingFile().then(
-      (file) => file && void loadRef.current(file),
-      (err: unknown) => window.alert(`Couldn't open the file: ${err instanceof Error ? err.message : String(err)}`),
-    )
+    void window.tabula.takePendingFile().then((pending) => {
+      if (!pending) return
+      if ('error' in pending) window.alert(`Couldn't open ${basename(pending.path)}: ${pending.error}`)
+      else void loadRef.current(pending)
+    })
   }, [api])
 
   return (
