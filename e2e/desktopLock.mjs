@@ -154,4 +154,13 @@ const runLocked = async () => {
   process.exit(code ?? 1)
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await runLocked()
+// Compared as real paths, so a run through a symlink still counts as running this file.
+const invokedDirectly = () => {
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
+}
+
+if (process.argv[1] && invokedDirectly()) await runLocked()

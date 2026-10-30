@@ -90,14 +90,13 @@ describe('desktop lock', () => {
     await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`holds 127.0.0.1:${port} without saying who it is`)
   })
 
-  it('is not held past its wait by a listener that keeps talking', async () => {
-    const port = await freePort()
-    // A foreign server that streams forever and never closes the connection.
+  // A foreign server that never closes the connection and writes `bytes` every `everyMs`.
+  const talker = async (port: number, bytes: number, everyMs: number) => {
     const streams: NodeJS.Timeout[] = []
     const other = net
       .createServer((socket) => {
         socket.on('error', () => undefined)
-        streams.push(setInterval(() => socket.write('x'.repeat(200)), 5))
+        streams.push(setInterval(() => socket.write('x'.repeat(bytes)), everyMs))
       })
       .listen({ host: '127.0.0.1', port })
     await once(other, 'listening')
@@ -105,7 +104,22 @@ describe('desktop lock', () => {
       streams.forEach(clearInterval)
       other.close()
     })
+  }
+
+  it('is not held past its wait by a listener that trickles forever', async () => {
+    const port = await freePort()
+    // Never reaches the size cap and never goes idle: only the module's real
+    // 2-second cut-off ends it, so the test takes that long.
+    await talker(port, 1, 50)
     await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`holds 127.0.0.1:${port} without saying who it is`)
+  })
+
+  it('stops reading a listener that floods it, without waiting for the cut-off', async () => {
+    const port = await freePort()
+    await talker(port, 200, 5)
+    const started = Date.now()
+    await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`holds 127.0.0.1:${port} without saying who it is`)
+    expect(Date.now() - started).toBeLessThan(1_000)
   })
 })
 
@@ -143,7 +157,13 @@ describe('desktop lock wrapper', () => {
     cleanups.push(() => child.kill('SIGKILL'))
     const [pidLine] = await once(child.stdout, 'data')
     const commandPid = Number(String(pidLine).trim())
-    cleanups.push(() => process.kill(commandPid, 'SIGKILL'))
+    cleanups.push(() => {
+      try {
+        process.kill(commandPid, 'SIGKILL')
+      } catch {
+        // Already gone: the test killed it.
+      }
+    })
 
     child.kill('SIGKILL')
     await once(child, 'exit')
