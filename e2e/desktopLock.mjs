@@ -63,17 +63,8 @@ const holder = async (port) => {
   return promise
 }
 
-/**
- * Waits until this process holds the desktop lock, then returns a function
- * that releases it. The lock is also released when the process exits.
- */
-export const acquireDesktopLock = async ({
-  suite,
-  port = DESKTOP_LOCK_PORT,
-  waitMs = 30 * 60_000,
-  pollMs = 1_000,
-  log = console.log,
-}) => {
+/** Waits until this process listens on the lock port; resolves with that server. */
+const takeLock = async ({ suite, port = DESKTOP_LOCK_PORT, waitMs = 30 * 60_000, pollMs = 1_000, log = console.log }) => {
   const owner = { pid: process.pid, suite, startedAt: Date.now() }
   const deadline = Date.now() + waitMs
   let told = ''
@@ -82,22 +73,31 @@ export const acquireDesktopLock = async ({
     if (server) {
       // Holding the port must not keep a finished process alive.
       server.unref()
-      const { promise, resolve } = Promise.withResolvers()
-      return () => {
-        server.close(() => resolve())
-        return promise
-      }
+      return server
     }
     const current = await holder(port)
     const who = current
       ? `the ${current.suite} desktop test run (pid ${current.pid})`
-      : `another program listening on 127.0.0.1:${port}`
+      : `whatever holds 127.0.0.1:${port} without saying who it is (\`lsof -nP -iTCP:${port} -sTCP:LISTEN\` shows it)`
     if (Date.now() > deadline) throw new Error(`Gave up after ${Math.round(waitMs / 60_000)} min waiting for ${who}.`)
     if (who !== told) {
       log(`Waiting for ${who} to finish…`)
       told = who
     }
     await sleep(pollMs)
+  }
+}
+
+/**
+ * Waits until this process holds the desktop lock, then returns a function
+ * that releases it. The lock is also released when the process exits.
+ */
+export const acquireDesktopLock = async (options) => {
+  const server = await takeLock(options)
+  const { promise, resolve } = Promise.withResolvers()
+  return () => {
+    server.close(() => resolve())
+    return promise
   }
 }
 
@@ -127,22 +127,30 @@ export default async function globalSetup() {
 
 /**
  * `node e2e/desktopLock.mjs "<shell command>" [args…]`: takes the lock, runs
- * the command with any further arguments appended, releases, and exits with
- * the command's code. `npm run test:e2e` runs its build through this, so a
- * second run never rebuilds the app under one that is still going.
+ * the command with any further arguments appended, and exits with its code.
+ * `npm run test:e2e` runs its build through this, so a second run never
+ * rebuilds the app under one that is still going.
+ *
+ * The command inherits the listening socket itself (as fd 3), so the lock
+ * lasts as long as the command does even if this wrapper is killed: the
+ * system frees the port only once every process holding it has exited. While
+ * the wrapper lives it also answers who holds the lock.
  */
 const runLocked = async () => {
   const [command, ...args] = process.argv.slice(2)
   if (!command) throw new Error('Usage: node e2e/desktopLock.mjs "<shell command>" [args…]')
   const quote = (arg) => `'${arg.replaceAll("'", `'\\''`)}'`
-  const release = await acquireDesktopLock({ suite: suiteName(), port: lockPort() })
+  const server = await takeLock({ suite: suiteName(), port: lockPort() })
+  // Node exposes a listening socket's descriptor only on its handle.
+  const fd = server._handle?.fd
+  if (typeof fd !== 'number' || fd < 0) throw new Error('Could not hand the desktop lock to the command.')
   const child = spawn([command, ...args.map(quote)].join(' '), {
     shell: true,
-    stdio: 'inherit',
+    stdio: ['inherit', 'inherit', 'inherit', fd],
     env: { ...process.env, [HELD]: '1' },
   })
   const [code] = await once(child, 'exit')
-  await release()
+  server.close()
   process.exit(code ?? 1)
 }
 

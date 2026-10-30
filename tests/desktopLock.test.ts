@@ -77,7 +77,7 @@ describe('desktop lock', () => {
     const other = net.createServer((socket) => socket.end('{"pid":1}')).listen({ host: '127.0.0.1', port })
     await once(other, 'listening')
     cleanups.push(() => other.close())
-    await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`another program listening on 127.0.0.1:${port}`)
+    await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`holds 127.0.0.1:${port} without saying who it is`)
   })
 
   it('is not held past its wait by a listener that never answers', async () => {
@@ -87,7 +87,7 @@ describe('desktop lock', () => {
     const other = net.createServer((socket) => socket.on('error', () => undefined)).listen({ host: '127.0.0.1', port })
     await once(other, 'listening')
     cleanups.push(() => other.close())
-    await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`another program listening on 127.0.0.1:${port}`)
+    await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`holds 127.0.0.1:${port} without saying who it is`)
   })
 
   it('is not held past its wait by a listener that keeps talking', async () => {
@@ -105,7 +105,7 @@ describe('desktop lock', () => {
       streams.forEach(clearInterval)
       other.close()
     })
-    await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`another program listening on 127.0.0.1:${port}`)
+    await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`holds 127.0.0.1:${port} without saying who it is`)
   })
 })
 
@@ -130,5 +130,27 @@ describe('desktop lock wrapper', () => {
     const [code] = await once(child, 'exit')
     expect(code).toBe(3)
     expect(out).toContain(`["-g","it's \\"x\\""] 1`)
+  })
+
+  it('keeps the lock for the command even if the wrapper itself is killed', async () => {
+    const port = await freePort()
+    const wrapper = path.resolve(import.meta.dirname, '../e2e/desktopLock.mjs')
+    // The command reports its pid, then runs until the test kills it.
+    const child = spawn(process.execPath, [wrapper, 'node -e "console.log(process.pid); setInterval(() => {}, 1000)"'], {
+      env: { ...process.env, DESKTOP_LOCK_PORT: String(port) },
+      stdio: ['ignore', 'pipe', 'inherit'],
+    })
+    cleanups.push(() => child.kill('SIGKILL'))
+    const [pidLine] = await once(child.stdout, 'data')
+    const commandPid = Number(String(pidLine).trim())
+    cleanups.push(() => process.kill(commandPid, 'SIGKILL'))
+
+    child.kill('SIGKILL')
+    await once(child, 'exit')
+    // The command still holds the socket, so the lock is not free.
+    await expect(lock(port, 'next', 1).acquired).rejects.toThrow('Gave up')
+
+    process.kill(commandPid, 'SIGKILL')
+    cleanups.push(await lock(port, 'next').acquired)
   })
 })
