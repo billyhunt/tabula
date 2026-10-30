@@ -54,19 +54,29 @@ if (!newest) {
 const target = install ? INSTALLED : newest.app
 const targetExecutable = path.join(target, 'Contents', 'MacOS', 'Tabula')
 
+const ps = (columns) => execFileSync('ps', ['-axo', columns], { encoding: 'utf8' }).split('\n')
+
 /** Every Tabula running, wherever it lives, with when it started. */
-const running = () =>
-  execFileSync('ps', ['-axo', 'pid=,lstart=,command='], { encoding: 'utf8' })
-    .split('\n')
+const running = () => {
+  // Names come from a column of their own: a name can have spaces, so it
+  // cannot share a line with the command that follows it.
+  const names = new Map(
+    ps('pid=,comm=')
+      .map((line) => /^\s*(\d+)\s+(.*)$/.exec(line))
+      .filter(Boolean)
+      .map((match) => [Number(match[1]), match[2]]),
+  )
+  return ps('pid=,lstart=,command=')
     .map((line) => /^\s*(\d+)\s+(\w{3} \w{3}\s+\d+ [\d:]+ \d{4})\s+(.*)$/.exec(line))
     .filter(Boolean)
     .map((match) => ({
       pid: Number(match[1]),
       startedAt: Date.parse(match[2]),
       // With --install this repo's dev Electron counts too: it is Tabula.
-      executable: tabulaExecutable(match[3], install ? DEV_ELECTRON : undefined),
+      executable: tabulaExecutable(names.get(Number(match[1])), match[3], install ? DEV_ELECTRON : undefined),
     }))
     .filter((p) => p.executable)
+}
 
 const alive = (pid) => {
   try {
