@@ -1,30 +1,31 @@
 # Handoff
 
 Where Tabula stands, so the next session can pick up without rereading history.
-Last updated 2026-10-19.
+Last updated 2026-10-30.
 
 ## State
 
-- `main` is at `c2714a0` (e2e clicks kept inside the 677px window CI allows).
-  PRs #1 to #4 are merged.
-- Two PRs are open. Both pass CI, touch different files, and can merge in
-  either order:
-  - [#5](https://github.com/billyhunt/tabula/pull/5) Ship Electron's licence
-    files from a fresh clone. Electron 44 downloads its binary into
-    `node_modules/electron/dist` on first use, not at install, so a clone that
-    goes straight to `npm run package` packaged the app without
-    `LICENSE.electron.txt` and `LICENSES.chromium.html`. `npm run package` now
-    runs `install-electron` first.
-  - [#6](https://github.com/billyhunt/tabula/pull/6) Start the MCP server by
-    default. The menu toggle still turns it off.
+- `main` is at `6e4eca8`. PRs #1 to #8 are merged:
+  - #5: packaged builds carry Electron's licence files.
+  - #6: the MCP server starts by default.
+  - #7: agents get their own window, exports cover the whole board, and
+    `npm run ship` exists.
+  - #8: every corner Excalidraw draws is square.
+- `/Applications/Tabula.app` was shipped from `6e4eca8` on 2026-10-30.
+- PR #9 is open: one desktop test run at a time locally, and the end-to-end
+  suite left to CI. Billy asked for it after local test runs locked up his
+  desktop. Its Alethia counterpart is billyhunt/alethia-markdown-editor#61.
 
 ## Known gaps
 
-- Until #5 merges, a packaged build from a fresh clone lacks Electron's licence
-  files. A clone where `npm run dev` has already run is fine.
-- After #6, installs that have ever changed a setting keep their saved
+- Installs that have ever changed a setting keep their saved
   `mcpEnabled: false`, because Tabula writes the whole settings object on any
   change. Only installs with no saved setting pick up the new default.
+- A Finder open of a file an agent already has open makes a second window:
+  Finder's `open-file` does not check `windowOnFile` yet (found in the #7
+  review; pre-existing).
+- Nothing tests the wiring from `did-start-loading` to the claim store's
+  reload rule; the rule itself has unit tests.
 
 ## Connecting an agent other than Claude Code
 
@@ -47,6 +48,5 @@ A request without the token gets 401. With it, `tools/list` returns 12 tools.
 
 ## Next
 
-1. Review and merge #5 and #6.
-2. `npm run package`, then replace the copy in `/Applications` with
-   `release/mac-arm64/Tabula.app`.
+1. Review and merge #9, and alethia-markdown-editor#61 with it.
+2. Follow-up: Finder opens should reuse a window that already has the file.

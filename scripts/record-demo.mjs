@@ -18,6 +18,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pngjs from 'pngjs'
+import { acquireDesktopLock } from '../e2e/desktopLock.mjs'
 
 // Both are CommonJS packages.
 const { GIFEncoder, applyPalette, quantize } = gifenc
@@ -104,6 +105,8 @@ const startModel = async () => {
 }
 
 const model = await startModel()
+// The recording opens a real window; it waits for any desktop test run first.
+const releaseLock = await acquireDesktopLock({ suite: 'tabula demo' })
 const profile = mkdtempSync(path.join(os.tmpdir(), 'tabula-demo-'))
 // Frames are captured continuously; identical ones are merged into one
 // longer frame when encoding.
@@ -163,6 +166,7 @@ try {
   await app?.close().catch(() => undefined)
   await new Promise((resolve) => model.server.close(resolve))
   rmSync(profile, { recursive: true, force: true })
+  await releaseLock()
 }
 if (captureError) throw captureError
 

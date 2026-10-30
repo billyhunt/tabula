@@ -21,11 +21,16 @@ Standing rule from Billy (2026-10-30). `npm run test:e2e` opens real app
 windows that grab focus, and on Billy's Mac it locks up the desktop he is
 working at. Agents do not run it locally:
 
-- Locally, run `npm run typecheck` and `npm test`. Push, and let CI run the
-  suite; read its result.
+- Locally, run `npm run typecheck` and `npm test`. CI runs the suite on macOS
+  for every pull request and every push to `main` (not for a branch without
+  a pull request): push to a branch with an open pull request and read its
+  result there.
 - Run one end-to-end test locally only to debug a failure CI cannot explain,
-  with `npx playwright test -g "<name>"`, never the whole suite.
+  with `npm run build && npx playwright test -g "<name>"`, never the whole
+  suite.
+- `npm run demo` opens a real window too; run it only when Billy asks.
 - No throwaway scripts or probes that open Electron windows on screen. Use
   `show: false` or offscreen windows.
-- Any local run waits for the machine-wide desktop-test lock
-  (`e2e/desktopLock.ts`), shared with Alethia, so two suites never run at once.
+- Every local suite run, and the demo, first waits for the desktop-test lock
+  (`e2e/desktopLock.mjs`: port 47390 on 127.0.0.1, shared with Alethia), so
+  two never run at once.
