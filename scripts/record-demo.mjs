@@ -104,9 +104,12 @@ const startModel = async () => {
   return { server, url: `http://127.0.0.1:${server.address().port}` }
 }
 
-const model = await startModel()
 // The recording opens a real window; it waits for any desktop test run first.
+// Nothing is started before that, so a wait that gives up leaves nothing
+// running; and if a later setup step throws, the process exits, which frees
+// the lock.
 const releaseLock = await acquireDesktopLock({ suite: 'tabula demo' })
+const model = await startModel()
 const profile = mkdtempSync(path.join(os.tmpdir(), 'tabula-demo-'))
 // Frames are captured continuously; identical ones are merged into one
 // longer frame when encoding.

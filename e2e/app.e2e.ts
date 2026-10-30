@@ -725,13 +725,21 @@ test('the library is saved, and comes back after the window reloads', async () =
 
   // With a selection the library also shows an "add" tile; clear it first.
   await page.mouse.click(880, 600)
-  await page.getByRole('tab').nth(1).click()
+  // The library is the sidebar's second tab. Earlier tests usually leave the
+  // sidebar open, but not always (CI caught it closed), so open it if needed.
+  const openLibrary = () =>
+    expect(async () => {
+      const tab = page.getByRole('tab').nth(1)
+      if (!(await tab.isVisible())) await page.getByRole('button', { name: 'Chat (⌘J)' }).click()
+      await tab.click({ timeout: 2_000 })
+    }).toPass({ timeout: 15_000 })
+  await openLibrary()
   const units = page.locator('.library-unit')
   await expect(units).toHaveCount(1)
 
   await page.reload()
   await page.waitForSelector('.excalidraw')
-  await page.getByRole('tab').nth(1).click()
+  await openLibrary()
   await expect(units).toHaveCount(1)
 })
 
