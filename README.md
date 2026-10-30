@@ -75,12 +75,15 @@ release yet.
   - One that was never saved gets its own file,
     `Documents/Tabula/Untitled <date> <time>.excalidraw.md`, with no dialog.
     ⌘S on it asks for a name and moves it there.
-  - New and Open save the current drawing instead of asking, and so do agents'
-    new and open commands.
+  - New and Open save the current drawing instead of asking. An agent's new
+    and open commands leave it alone and use a window of their own (the
+    current one only if it is still blank).
   - A version history (File ▸ Browse Versions…) keeps what every save
     replaced, with a preview and restore.
 - Export to PNG, SVG, PDF (one page per frame, if you like) and Mermaid, or
-  copy as PNG, SVG or Mermaid; exports cover the selection when there is one.
+  copy as PNG, SVG or Mermaid. Menu exports cover the whole board; File ▸
+  Export Image… (⇧⌘E) opens covering the whole board too, with an "Only
+  selected" switch for just the selection.
 - Mermaid import: File ▸ Import Mermaid…, or paste a Mermaid diagram onto the
   canvas (⇧⌘V pastes it as text).
 - **Library**: shapes you add to Excalidraw's library are kept for every
@@ -124,12 +127,15 @@ npm test          # unit tests
 npm run test:e2e  # builds, then drives the app with Playwright
 npm run package   # unsigned Apple-silicon .app in release/mac-arm64/, then opens it
 npm run open      # opens the newest packaged build, quitting any older copy
+npm run ship      # package, quit every copy, replace /Applications/Tabula.app, reopen it
 npm run demo      # builds, then re-records docs/demo.gif
 ```
 
 `npm run open` picks whichever of `release/` and `release-next/` (test
 builds) was built last. Any other running copy is quit first, which saves
 its unsaved drawings, so the app in the Dock is always the newest build.
+`npm run ship` does the same for the copy in `/Applications`; it stops
+without replacing anything if a copy won't quit (a save prompt, say).
 
 The end-to-end run uses a throwaway profile and a fake Anthropic API, so it
 needs no key. Set `TABULA_E2E_APP` to a packaged app's binary to run it

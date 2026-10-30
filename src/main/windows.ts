@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
-import { Channels, type MenuCommand, type OpenedFile } from '../shared/ipc'
+import { Channels, type MenuCommand, type PendingFile } from '../shared/ipc'
+import { createClaims } from './claims'
 import { RENDERER_URL } from './rendererProtocol'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -60,6 +62,17 @@ const saveBeforeClose = async (win: BrowserWindow): Promise<boolean> => {
   })
   return response === 1
 }
+
+const claims = createClaims<BrowserWindow>()
+
+/** Ends the claim; the file the window represents takes over. */
+export const releaseClaim = (win: BrowserWindow) => claims.release(win)
+
+/** Marks `win` as having `file` loaded into it by an agent, until the editor reports it. */
+export const claimForLoad = (win: BrowserWindow, file: string) => claims.loading(win, file)
+
+/** Whether `win` has a claimed file the editor has not yet confirmed. */
+export const hasPendingFile = (win: BrowserWindow) => claims.fileOf(win) !== undefined
 
 export const createWindow = (filePath?: string) => {
   const win = new BrowserWindow({
@@ -118,10 +131,10 @@ export const createWindow = (filePath?: string) => {
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (event) => event.preventDefault())
+  // A reload before the editor reported its file asks for the file again.
+  win.webContents.on('did-start-loading', () => claims.reloaded(win))
 
-  if (filePath) {
-    win.webContents.once('did-finish-load', () => void openInWindow(win, filePath))
-  }
+  if (filePath) claims.expect(win, filePath)
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void win.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -131,11 +144,24 @@ export const createWindow = (filePath?: string) => {
   return win
 }
 
-/** Reads a drawing from disk and hands it to the window to load. */
-export const openInWindow = async (win: BrowserWindow, filePath: string) => {
-  const file: OpenedFile = { path: filePath, contents: await readFile(filePath, 'utf8') }
-  win.webContents.send(Channels.fileOpened, file)
-  app.addRecentDocument(filePath)
+/**
+ * The drawing this window was made to open, read from disk; null when it has
+ * none or already took it on this page load. The editor asks once it is ready
+ * to listen, so the file cannot arrive before it can be loaded. A file that
+ * cannot be read ends the claim and comes back as an error for the editor to
+ * show, so the window is just an empty one.
+ */
+export const takePendingFile = async (win: BrowserWindow): Promise<PendingFile | null> => {
+  const file = claims.take(win)
+  if (file === undefined) return null
+  try {
+    const contents = await readFile(file, 'utf8')
+    app.addRecentDocument(file)
+    return { path: file, contents }
+  } catch (err) {
+    releaseClaim(win)
+    return { path: file, error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 // Drawing windows only. Hidden helpers (the PDF printer) are BrowserWindows
@@ -144,6 +170,27 @@ const editors = new Set<BrowserWindow>()
 
 /** Open drawing windows, oldest first. */
 export const editorWindows = (): BrowserWindow[] => [...editors]
+
+const realPath = (file: string) => {
+  try {
+    return realpathSync.native(file)
+  } catch {
+    return path.normalize(file)
+  }
+}
+
+/**
+ * The drawing window showing `target`, if any: by the file it was claimed to
+ * open while the editor has not confirmed it, else by the file it represents.
+ * Two windows on one file would autosave over each other.
+ */
+export const windowOnFile = (target: string): BrowserWindow | undefined => {
+  const wanted = realPath(target)
+  return editorWindows().find((win) => {
+    const shown = claims.fileOf(win) ?? win.getRepresentedFilename()
+    return shown !== '' && realPath(shown) === wanted
+  })
+}
 
 // Agents act while the user sits in a terminal, when no window has focus, so
 // "the window" means the one focused last, not merely any open window.

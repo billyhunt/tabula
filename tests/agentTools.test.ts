@@ -203,3 +203,17 @@ describe('prepareSkeletons', () => {
     ).toContain('must be an element created in the same call')
   })
 })
+
+describe('the removed discardChanges argument', () => {
+  // new_drawing and open_file never replace a drawing any more; an agent still
+  // passing the old flag is told, not silently ignored.
+  it.each([
+    ['new_drawing', {}],
+    ['open_file', { path: '/tmp/drawing.excalidraw' }],
+  ])('%s rejects it', (name, base) => {
+    const tool = CANVAS_TOOLS.find((spec) => spec.name === name)
+    if (!tool) throw new Error(`no tool ${name}`)
+    expect(() => parseToolArgs(name, tool.input, base)).not.toThrow()
+    expect(() => parseToolArgs(name, tool.input, { ...base, discardChanges: true })).toThrow(/discardChanges/)
+  })
+})
