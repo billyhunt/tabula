@@ -15,7 +15,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
-    "build:app": "npm run licenses && npm run build && electron-builder --mac --dir",
+    "build:app": "npm run licenses && install-electron && npm run build && electron-builder --mac --dir",
     "package": "npm run build:app && node scripts/open-app.mjs",
     "ship": "npm run build:app && node scripts/open-app.mjs --install",
     "open": "node scripts/open-app.mjs",

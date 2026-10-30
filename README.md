@@ -143,8 +143,9 @@ against the packaged build.
 
 ## Connecting an agent
 
-Turn on **Agent ▸ Allow Agent Connections (MCP)** in the menu bar, then copy the
-setup command from Settings and run it once:
+The MCP server starts with Tabula (turn it off with **Agent ▸ Allow Agent
+Connections (MCP)** in the menu bar). Copy the setup command from Settings and
+run it once:
 
 ```bash
 claude mcp add --transport http tabula http://127.0.0.1:7337/mcp --header "Authorization: Bearer <token>"
