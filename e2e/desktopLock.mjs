@@ -33,14 +33,22 @@ const listen = (port, owner) => {
   return promise
 }
 
-/** Who holds the lock, as its owner reports it; null if the port's listener is not one of us. */
+/**
+ * Who holds the lock, as its owner reports it; null if the port's listener is
+ * not one of us. A listener that never closes, or keeps talking, is cut off
+ * after two seconds or a kilobyte, so a waiter is never held past its deadline.
+ */
 const holder = async (port) => {
   const { promise, resolve } = Promise.withResolvers()
   let data = ''
   const socket = net.connect({ host: HOST, port })
-  socket.setTimeout(2_000, () => socket.destroy())
-  socket.on('data', (chunk) => (data += chunk))
+  const cutOff = setTimeout(() => socket.destroy(), 2_000)
+  socket.on('data', (chunk) => {
+    data += chunk
+    if (data.length > 1_024) socket.destroy()
+  })
   socket.on('close', () => {
+    clearTimeout(cutOff)
     try {
       const owner = JSON.parse(data)
       resolve(typeof owner?.pid === 'number' ? owner : null)

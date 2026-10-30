@@ -78,4 +78,22 @@ describe('desktop lock', () => {
     cleanups.push(() => other.close())
     await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`another program listening on 127.0.0.1:${port}`)
   })
+
+  it('is not held past its wait by a listener that keeps talking', async () => {
+    const port = await freePort()
+    // A foreign server that streams forever and never closes the connection.
+    const streams: NodeJS.Timeout[] = []
+    const other = net
+      .createServer((socket) => {
+        socket.on('error', () => undefined)
+        streams.push(setInterval(() => socket.write('x'.repeat(200)), 5))
+      })
+      .listen({ host: '127.0.0.1', port })
+    await once(other, 'listening')
+    cleanups.push(() => {
+      streams.forEach(clearInterval)
+      other.close()
+    })
+    await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`another program listening on 127.0.0.1:${port}`)
+  })
 })
