@@ -15,10 +15,13 @@
  * Plain JavaScript so a Node script (the demo recorder) can import it as well
  * as Playwright. Alethia keeps a copy of this file; keep the port in step.
  */
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { fileURLToPath } from 'node:url'
 
 export const DESKTOP_LOCK_PORT = 47_390
 
@@ -51,7 +54,7 @@ const holder = async (port) => {
     clearTimeout(cutOff)
     try {
       const owner = JSON.parse(data)
-      resolve(typeof owner?.pid === 'number' ? owner : null)
+      resolve(typeof owner?.pid === 'number' && typeof owner.suite === 'string' ? owner : null)
     } catch {
       resolve(null)
     }
@@ -107,7 +110,40 @@ const suiteName = () => {
   }
 }
 
+// Set for a command run by the wrapper below, which already holds the lock.
+const HELD = 'DESKTOP_LOCK_HELD'
+
+/** Whether a parent process (the wrapper) holds the lock for this one. */
+export const lockHeldByParent = () => process.env[HELD] === '1'
+
+// Tests point the wrapper at a private port; everything else uses the shared one.
+const lockPort = () => Number(process.env.DESKTOP_LOCK_PORT) || DESKTOP_LOCK_PORT
+
 /** Playwright global setup: hold the lock for the whole run; teardown releases it. */
 export default async function globalSetup() {
-  return acquireDesktopLock({ suite: suiteName() })
+  if (lockHeldByParent()) return () => undefined
+  return acquireDesktopLock({ suite: suiteName(), port: lockPort() })
 }
+
+/**
+ * `node e2e/desktopLock.mjs "<shell command>" [args…]`: takes the lock, runs
+ * the command with any further arguments appended, releases, and exits with
+ * the command's code. `npm run test:e2e` runs its build through this, so a
+ * second run never rebuilds the app under one that is still going.
+ */
+const runLocked = async () => {
+  const [command, ...args] = process.argv.slice(2)
+  if (!command) throw new Error('Usage: node e2e/desktopLock.mjs "<shell command>" [args…]')
+  const quote = (arg) => `'${arg.replaceAll("'", `'\\''`)}'`
+  const release = await acquireDesktopLock({ suite: suiteName(), port: lockPort() })
+  const child = spawn([command, ...args.map(quote)].join(' '), {
+    shell: true,
+    stdio: 'inherit',
+    env: { ...process.env, [HELD]: '1' },
+  })
+  const [code] = await once(child, 'exit')
+  await release()
+  process.exit(code ?? 1)
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await runLocked()

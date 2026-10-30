@@ -73,8 +73,8 @@ describe('desktop lock', () => {
 
   it('says so when something else holds the port', async () => {
     const port = await freePort()
-    // JSON is not enough: only a reply naming a pid is one of ours.
-    const other = net.createServer((socket) => socket.end('{"ok":true}')).listen({ host: '127.0.0.1', port })
+    // JSON is not enough: only a reply naming a pid and a suite is one of ours.
+    const other = net.createServer((socket) => socket.end('{"pid":1}')).listen({ host: '127.0.0.1', port })
     await once(other, 'listening')
     cleanups.push(() => other.close())
     await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`another program listening on 127.0.0.1:${port}`)
@@ -106,5 +106,29 @@ describe('desktop lock', () => {
       other.close()
     })
     await expect(lock(port, 'blocked', 1).acquired).rejects.toThrow(`another program listening on 127.0.0.1:${port}`)
+  })
+})
+
+describe('desktop lock wrapper', () => {
+  it('runs a command only once it holds the lock, with its arguments, and passes on its exit code', async () => {
+    const port = await freePort()
+    const releaseFirst = await lock(port, 'first').acquired
+    const wrapper = path.resolve(import.meta.dirname, '../e2e/desktopLock.mjs')
+    // `--` so node hands the forwarded arguments to the script instead of reading them as its own.
+    const command = 'node -e "console.log(JSON.stringify(process.argv.slice(1)), process.env.DESKTOP_LOCK_HELD); process.exit(3)" --'
+    const child = spawn(process.execPath, [wrapper, command, '-g', `it's "x"`], {
+      env: { ...process.env, DESKTOP_LOCK_PORT: String(port) },
+      stdio: ['ignore', 'pipe', 'inherit'],
+    })
+    cleanups.push(() => child.kill('SIGKILL'))
+    let out = ''
+    child.stdout.on('data', (chunk) => (out += chunk))
+    // The first thing it prints is that it is waiting: the command has not run.
+    await once(child.stdout, 'data')
+    expect(out).toMatch(/^Waiting for the first desktop test run/)
+    await releaseFirst()
+    const [code] = await once(child, 'exit')
+    expect(code).toBe(3)
+    expect(out).toContain(`["-g","it's \\"x\\""] 1`)
   })
 })

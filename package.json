@@ -21,8 +21,8 @@
     "open": "node scripts/open-app.mjs",
     "test": "vitest run",
     "licenses": "node scripts/collect-licenses.mjs",
-    "test:e2e": "npm run build && playwright test",
-    "demo": "npm run build && node scripts/record-demo.mjs"
+    "test:e2e": "node e2e/desktopLock.mjs \"npm run build && playwright test\"",
+    "demo": "node e2e/desktopLock.mjs \"npm run build && node scripts/record-demo.mjs\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
