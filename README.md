@@ -139,7 +139,14 @@ without replacing anything if a copy won't quit (a save prompt, say).
 
 The end-to-end run uses a throwaway profile and a fake Anthropic API, so it
 needs no key. Set `TABULA_E2E_APP` to a packaged app's binary to run it
-against the packaged build.
+against the packaged build. It opens app windows that take focus, so CI runs
+it on macOS for every pull request and every push to `main`; there is no need
+to run it on the Mac you are working at. A local run, like `npm run demo`,
+first waits for any other desktop test run on the machine (Alethia's
+included), and builds only once it holds the lock, so two never fight over
+focus or rebuild under each other. The lock is port 47390 on 127.0.0.1, which
+the system frees as soon as its holder exits. Pass Playwright options after
+`--`: `npm run test:e2e -- -g "<name>"`.
 
 ## Connecting an agent
 
