@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Channels, type OpenedFile } from '../shared/ipc'
+import { pathGrants, withDrawingExtension } from './pathGrants'
 import type { SettingsPatch } from '../shared/settings'
 import { getSettings, updateSettings } from './settings'
 import { snapshotVersion } from './versions'
@@ -141,13 +142,16 @@ export const registerFileIpc = () => {
     const result = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters: FILTERS })
     if (result.canceled || !result.filePaths[0]) return null
     const filePath = result.filePaths[0]
+    await pathGrants.grant(filePath)
     app.addRecentDocument(filePath)
     return { path: filePath, contents: await readFile(filePath, 'utf8') } satisfies OpenedFile
   })
 
-  ipcMain.handle(Channels.saveFile, async (_event, filePath: string, contents: string) => {
-    await writeDrawing(filePath, contents)
-    return { path: filePath }
+  ipcMain.handle(Channels.saveFile, async (_event, filePath: unknown, contents: unknown) => {
+    if (typeof contents !== 'string') throw new Error('EINVAL: drawing contents must be text')
+    await pathGrants.assertCanSaveDrawing(filePath)
+    await writeDrawing(filePath as string, contents)
+    return { path: filePath as string }
   })
 
   ipcMain.handle(Channels.pickSavePath, async (event, suggestedName: string) => {
@@ -160,17 +164,34 @@ export const registerFileIpc = () => {
       filters: FILTERS,
     })
     if (result.canceled || !result.filePath) return null
+    // The dialog's "md" filter can return a name no drawing may be saved
+    // under; give it the drawing extension. The dialog only confirmed
+    // replacing the file it returned, so ask again if this one exists.
+    const filePath = withDrawingExtension(result.filePath)
+    if (filePath !== result.filePath && existsSync(filePath)) {
+      const { response } = await dialog.showMessageBox(win!, {
+        type: 'warning',
+        message: `"${path.basename(filePath)}" already exists. Do you want to replace it?`,
+        buttons: ['Cancel', 'Replace'],
+        defaultId: 0,
+        cancelId: 0,
+      })
+      if (response !== 1) return null
+    }
     // Chosen in a Save dialog, the file is the user's now, even if it is an
     // autosave file saved over under its own name.
-    await withRegistry((registry) => registry.delete(path.normalize(result.filePath)))
-    app.addRecentDocument(result.filePath)
-    await updateSettings({ lastSaveDir: path.dirname(result.filePath) })
-    return result.filePath
+    if (!(await pathGrants.grant(filePath))) throw new Error(`EINVAL: can't save to ${filePath}`)
+    await withRegistry((registry) => registry.delete(path.normalize(filePath)))
+    app.addRecentDocument(filePath)
+    await updateSettings({ lastSaveDir: path.dirname(filePath) })
+    return filePath
   })
 
   ipcMain.handle(Channels.untitledPath, async () => {
     const filePath = await untitledDrawingPath()
     await withRegistry((registry) => registry.set(filePath, null))
+    // Main allocated this path, so it may write it.
+    await pathGrants.grant(filePath)
     app.addRecentDocument(filePath)
     return filePath
   })

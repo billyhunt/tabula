@@ -3,6 +3,7 @@ import { readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import { Channels, type LibraryInstall } from '../shared/ipc'
+import { enqueueInstall, truncateForDialog } from './libraryQueue'
 import { createWindow, editorWindows, focusedWindow } from './windows'
 
 /**
@@ -86,14 +87,18 @@ const isAllowedLibraryUrl = (url: URL) =>
 const reportInstallProblem = (detail: string) => {
   console.error('library install:', detail)
   const show = () =>
-    void dialog.showMessageBox({ type: 'warning', message: "Tabula couldn't add that library.", detail })
+    void dialog.showMessageBox({
+      type: 'warning',
+      message: "Tabula couldn't add that library.",
+      detail: truncateForDialog(detail),
+    })
   // A link that launched the app arrives before it is ready to show anything.
   if (app.isReady()) show()
   else void app.whenReady().then(show)
 }
 
 // Downloaded and waiting for a window to take them.
-const pending: LibraryInstall[] = []
+const pending: (LibraryInstall & { url: string })[] = []
 
 /** Tells a window there are libraries to take, opening one if none is. */
 const announceInstalls = () => {
@@ -142,7 +147,8 @@ export const handleLibraryUrl = async (link: string) => {
     }
     const json = Buffer.concat(chunks).toString('utf8')
     LibraryFileSchema.parse(JSON.parse(json))
-    pending.push({ json, token: params.get('token') })
+    // Capped and de-duplicated so a hostile page can't flood the queue.
+    enqueueInstall(pending, { json, token: params.get('token'), url: libraryUrl.href })
     announceInstalls()
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
@@ -158,6 +164,6 @@ export const registerLibraryIpc = () => {
   ipcMain.handle(Channels.libraryTakeInstalls, (event) => {
     // Only a drawing window takes them; hidden helpers never ask.
     if (!editorWindows().some((win) => win.webContents === event.sender)) return []
-    return pending.splice(0)
+    return pending.splice(0).map(({ json, token }) => ({ json, token }))
   })
 }

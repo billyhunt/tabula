@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import { Channels, type MenuCommand, type PendingFile } from '../shared/ipc'
 import { createClaims } from './claims'
+import { pathGrants } from './pathGrants'
 import { RENDERER_URL } from './rendererProtocol'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -136,8 +137,10 @@ export const createWindow = (filePath?: string) => {
 
   if (filePath) claims.expect(win, filePath)
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    void win.loadURL(process.env.VITE_DEV_SERVER_URL)
+  // A packaged app never honours a dev server from its environment.
+  const devServerUrl = app.isPackaged ? undefined : process.env.VITE_DEV_SERVER_URL
+  if (devServerUrl) {
+    void win.loadURL(devServerUrl)
   } else {
     void win.loadURL(RENDERER_URL)
   }
@@ -149,13 +152,15 @@ export const createWindow = (filePath?: string) => {
  * none or already took it on this page load. The editor asks once it is ready
  * to listen, so the file cannot arrive before it can be loaded. A file that
  * cannot be read ends the claim and comes back as an error for the editor to
- * show, so the window is just an empty one.
+ * show, so the window is just an empty one. Only the OS (Finder, the Dock) or
+ * a validated MCP call names these paths, so the drawing may be saved back.
  */
 export const takePendingFile = async (win: BrowserWindow): Promise<PendingFile | null> => {
   const file = claims.take(win)
   if (file === undefined) return null
   try {
     const contents = await readFile(file, 'utf8')
+    await pathGrants.grant(file)
     app.addRecentDocument(file)
     return { path: file, contents }
   } catch (err) {

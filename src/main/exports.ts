@@ -105,6 +105,11 @@ export const writePdf = async (
     show: false,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
   })
+  // The page is ours alone: no navigating away, no popups. will-navigate and
+  // will-redirect don't fire for the programmatic loadFile below.
+  win.webContents.on('will-navigate', (event) => event.preventDefault())
+  win.webContents.on('will-redirect', (event) => event.preventDefault())
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   try {
     await writeFile(htmlPath, pdfHtml(pages), 'utf8')
     await win.loadFile(htmlPath)

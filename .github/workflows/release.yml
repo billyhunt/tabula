@@ -1,0 +1,130 @@
+name: Release
+
+# Pushing a tag like v0.1.0 or v0.1.0-beta.1 builds the DMG and zip and
+# publishes them as a GitHub release. The tag must match package.json's
+# version and point at a commit on main, so a release can never carry a
+# different number than its tag or come from an unreviewed branch.
+#
+# Signing secrets are handed to exactly one step (the electron-builder run),
+# never to npm install scripts, tests or the Vite build, which all execute
+# third-party code. Protect the v* tag pattern with a repository ruleset, and
+# consider putting the secrets in a GitHub Environment with required reviewers.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-latest
+    timeout-minutes: 40
+    permissions:
+      # Creating the release is the only write this workflow needs.
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          # The main-ancestry check below needs history.
+          fetch-depth: 0
+
+      # No npm cache: a restored cache is unverified input to a job that
+      # ends up holding signing credentials.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Tag matches package.json and is on main
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_SHA is not on main; release tags must point at merged commits"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Decide whether this build is signed
+        env:
+          HAS_CERT: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 != '' && secrets.MACOS_CERTIFICATE_PASSWORD != '' }}
+          HAS_NOTARY: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+        run: |
+          if [ "$HAS_CERT" = "true" ] && [ "$HAS_NOTARY" = "true" ]; then
+            echo "SIGNED=true" >> "$GITHUB_ENV"
+          else
+            echo "SIGNED=false" >> "$GITHUB_ENV"
+            echo "::warning::Signing secrets are not all set; building an UNSIGNED release."
+          fi
+
+      # Install scripts are skipped: they run third-party code on a runner
+      # that later holds signing credentials. What the build needs from them
+      # is run explicitly.
+      - run: npm ci --ignore-scripts
+      # What the install scripts would have done: fetch the Electron binary and
+      # copy the bundled fonts the build needs.
+      - run: node node_modules/electron/install.js
+      - run: node scripts/copy-fonts.mjs
+
+      - name: Test
+        run: npm test
+
+      - name: Build the app (no secrets in scope)
+        run: npm run build
+
+      - name: Licence texts
+        run: npm run licenses
+
+      - name: Package signed and notarized
+        if: env.SIGNED == 'true'
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac dmg zip --arm64 --publish never -c.mac.notarize=true
+
+      - name: Package unsigned
+        if: env.SIGNED != 'true'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac dmg zip --arm64 --publish never
+
+      - name: Verify the signature
+        if: env.SIGNED == 'true'
+        run: |
+          app=$(ls -d release/mac-arm64/*.app)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
+
+      - name: Checksums
+        working-directory: release
+        run: shasum -a 256 *.dmg *.zip > SHA256SUMS.txt
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A pre-1.0 or hyphenated version is marked as a pre-release.
+          flags=""
+          case "$VERSION" in
+            0.*|*-*) flags="--prerelease" ;;
+          esac
+          notes="Apple-silicon macOS build."
+          if [ "$SIGNED" != "true" ]; then
+            notes="$notes This build is **not signed or notarized**: macOS will refuse to open it until you allow it in System Settings > Privacy & Security > Open Anyway. Verify the download against SHA256SUMS.txt."
+          fi
+          gh release create "$GITHUB_REF_NAME" release/*.dmg release/*.zip release/SHA256SUMS.txt \
+            --title "Tabula $VERSION" --notes "$notes" --verify-tag $flags

@@ -13,6 +13,7 @@ import {
 } from '../../shared/agentTools'
 import type { AgentToolResult } from '../../shared/ipc'
 import { writePdf } from '../exports'
+import { pathGrants } from '../pathGrants'
 import { claimForLoad, releaseClaim, windowOnFile } from '../windows'
 import type { BlankWindow } from './blankWindow'
 import { callCanvasTool } from './bridge'
@@ -48,6 +49,8 @@ const inWindowQueue = <T>(work: () => Promise<T>): Promise<T> => {
 const openFile = async (args: unknown, windows: ToolWindows): Promise<AgentToolResult> => {
   const { path: requested } = parseToolArgs('open_file', openFileInput, args)
   const target = await checkOpenPath(requested)
+  // Checked above, so the drawing may be saved back to it.
+  await pathGrants.grant(target)
   // Two windows on one file would autosave over each other.
   const already = windowOnFile(target)
   if (already) {
@@ -114,6 +117,8 @@ export const FILE_TOOLS: Record<string, FileTool> = {
   save: async (args, windows) => {
     const { path: requested } = parseToolArgs('save', saveInput, args)
     const target = requested === undefined ? undefined : await checkSavePath(requested)
+    // Checked above, so the window may write it.
+    if (target) await pathGrants.grant(target)
     const result = await callCanvasTool(await windows.current(), 'saveDocument', { path: target }, 60_000)
     if (target) app.addRecentDocument(target)
     return result

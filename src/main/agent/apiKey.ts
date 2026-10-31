@@ -66,3 +66,22 @@ export const clientOptions = (provider: Provider, key: string, env: KeyEnv): Cli
     defaultHeaders: Object.fromEntries(customHeaderNames.map((name) => [name, null])),
   }
 }
+
+/**
+ * A packaged app takes ANTHROPIC_BASE_URL only if it is https, or http to this
+ * machine, so an inherited environment can't route the API key elsewhere.
+ * Returns the URL when acceptable, else undefined.
+ */
+export const safePackagedBaseUrl = (value: string | undefined): string | undefined => {
+  if (!value) return undefined
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return undefined
+  }
+  if (url.protocol === 'https:') return value
+  const host = url.hostname.replace(/^\[|\]$/g, '')
+  const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1'
+  return url.protocol === 'http:' && loopback ? value : undefined
+}
