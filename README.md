@@ -36,8 +36,8 @@ open it in Tabula, or in Obsidian with the Excalidraw plugin.*
 
 ## Status
 
-Early alpha. It runs from source on Apple-silicon Macs; there is no signed
-release yet.
+Early alpha for Apple-silicon Macs. Builds are unsigned until a Developer ID
+certificate is configured; see [Releasing](#releasing).
 
 ### AI
 
@@ -123,6 +123,8 @@ npm run dev
 npm test          # unit tests
 npm run test:e2e  # builds, then drives the app with Playwright
 npm run package   # unsigned Apple-silicon .app in release/mac-arm64/, then opens it
+npm run dist      # unsigned Apple-silicon .dmg and .zip in release/
+npm run dist:signed  # the same, signed with Developer ID and notarized (needs the secrets below)
 npm run open      # opens the newest packaged build, quitting any older copy
 npm run demo      # builds, then re-records docs/demo.gif
 ```
@@ -132,8 +134,40 @@ builds) was built last. Any other running copy is quit first, which saves
 its unsaved drawings, so the app in the Dock is always the newest build.
 
 The end-to-end run uses a throwaway profile and a fake Anthropic API, so it
-needs no key. Set `TABULA_E2E_APP` to a packaged app's binary to run it
-against the packaged build.
+needs no key. To run it against a packaged build, `npm run package:e2e`
+(writes `release-next/`), then set `TABULA_E2E_APP` to
+`release-next/mac-arm64/Tabula.app/Contents/MacOS/Tabula`. Release builds
+turn off Electron's `--inspect` fuse, which Playwright attaches through, so
+this build re-enables that one fuse and nothing else.
+
+### Releasing
+
+Set `version` in `package.json`, merge, then push a matching tag:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The [release workflow](.github/workflows/release.yml) refuses a tag that does
+not match `package.json`, runs the unit tests, builds the DMG and zip, writes
+`SHA256SUMS.txt`, and publishes a GitHub release. Versions below 1.0 or with a
+suffix are marked pre-release.
+
+It signs and notarizes only when all five repository secrets are set; otherwise
+it publishes an unsigned build and says so in the release notes. Unsigned
+builds open only after Privacy & Security ▸ Open Anyway.
+
+| Secret | Value |
+|---|---|
+| `MACOS_CERTIFICATE_P12_BASE64` | Developer ID Application certificate and key, exported as `.p12`, then `base64 -i cert.p12` |
+| `MACOS_CERTIFICATE_PASSWORD` | the password set on that export |
+| `APPLE_ID` | the Apple Account email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | an app-specific password from account.apple.com |
+| `APPLE_TEAM_ID` | the Team ID under Membership at developer.apple.com |
+
+The signing path (`dist:signed`, the hardened runtime and
+`build/entitlements.mac.plist`) has not yet been run against a real
+certificate.
 
 ## Connecting an agent
 

@@ -13,6 +13,7 @@ import { registerVersionIpc } from './versions'
 app.setName('Tabula')
 // End-to-end tests run against a throwaway profile, never the real settings,
 // versions, MCP token or Documents folder (where untitled drawings autosave).
+// This is honoured in packaged builds too because the packaged e2e run needs it.
 if (process.env.TABULA_USER_DATA) {
   app.setPath('userData', process.env.TABULA_USER_DATA)
   app.setPath('documents', path.join(process.env.TABULA_USER_DATA, 'Documents'))

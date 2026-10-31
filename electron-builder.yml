@@ -20,12 +20,37 @@ extraResources:
     to: LICENSE.electron.txt
   - from: node_modules/electron/dist/LICENSES.chromium.html
     to: LICENSES.chromium.html
+# Electron fuses are flipped in the packaged binary before it is signed. They
+# close the ways a local process could run its own code under the app's
+# signed identity: ELECTRON_RUN_AS_NODE, NODE_OPTIONS and --inspect, or a
+# loose app/ directory in place of the validated app.asar. Playwright attaches
+# through --inspect, so a packaged end-to-end run needs a build with
+# enableNodeCliInspectArguments on (see the README).
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  # Flipping fuses invalidates Electron's ad-hoc signature, and an arm64 binary
+  # with a stale signature is killed at launch. Re-sign ad hoc when no real
+  # identity signs the bundle afterwards.
+  resetAdHocDarwinSignature: true
+  # The renderer is served from app://tabula/ and the PDF print window needs no
+  # file: subresources, so the file: protocol's extra privileges are not needed.
+  grantFileProtocolExtraPrivileges: false
 mac:
   category: public.app-category.graphics-design
   target: [dir]
-  # Unsigned local builds. Add hardenedRuntime, entitlements and notarize
-  # when a Developer ID certificate is available.
-  identity: null
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # Hardened runtime and entitlements are what notarization requires. They do
+  # nothing to an unsigned build. Whether a build is signed and notarized is
+  # decided by the npm script that runs electron-builder (see package.json),
+  # not here, so a missing certificate can never fail a local build.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   darkModeSupport: true
 # tabula://library#addLibrary=… is how libraries.excalidraw.com hands a
 # library back after "Browse libraries" (see src/main/library.ts).

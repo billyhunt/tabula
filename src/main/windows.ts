@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import { Channels, type MenuCommand, type OpenedFile } from '../shared/ipc'
+import { pathGrants } from './pathGrants'
 import { RENDERER_URL } from './rendererProtocol'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -123,17 +124,23 @@ export const createWindow = (filePath?: string) => {
     win.webContents.once('did-finish-load', () => void openInWindow(win, filePath))
   }
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    void win.loadURL(process.env.VITE_DEV_SERVER_URL)
+  // A packaged app never honours a dev server from its environment.
+  const devServerUrl = app.isPackaged ? undefined : process.env.VITE_DEV_SERVER_URL
+  if (devServerUrl) {
+    void win.loadURL(devServerUrl)
   } else {
     void win.loadURL(RENDERER_URL)
   }
   return win
 }
 
-/** Reads a drawing from disk and hands it to the window to load. */
+/**
+ * Reads a drawing from disk and hands it to the window to load. Only the OS
+ * (Finder, the Dock) names these paths, so the drawing may be saved back.
+ */
 export const openInWindow = async (win: BrowserWindow, filePath: string) => {
   const file: OpenedFile = { path: filePath, contents: await readFile(filePath, 'utf8') }
+  await pathGrants.grant(filePath)
   win.webContents.send(Channels.fileOpened, file)
   app.addRecentDocument(filePath)
 }

@@ -12,7 +12,8 @@ import type { AgentStatus, ModelInfo } from '../../shared/ipc'
 import { PROVIDER_INFO, PROVIDERS, type Provider } from '../../shared/providers'
 import { activeModel } from '../../shared/settings'
 import { getSettings } from '../settings'
-import { ApiKeyError, clientOptions, keySource, resolveApiKey } from './apiKey'
+import { app } from 'electron'
+import { ApiKeyError, clientOptions, keySource, resolveApiKey, safePackagedBaseUrl } from './apiKey'
 import { hasSavedKey, readSavedKey } from './keyStore'
 
 /**
@@ -22,7 +23,15 @@ import { hasSavedKey, readSavedKey } from './keyStore'
 export const anthropicClient = () => {
   const { provider } = getSettings().agent
   const { key } = resolveApiKey(provider, process.env, () => readSavedKey(provider))
-  return new Anthropic({ ...clientOptions(provider, key, process.env), maxRetries: 2 })
+  const options = clientOptions(provider, key, process.env)
+  if (provider !== 'openrouter' && app.isPackaged) {
+    const requested = process.env.ANTHROPIC_BASE_URL
+    const safe = safePackagedBaseUrl(requested)
+    if (requested && !safe) console.warn('Ignoring ANTHROPIC_BASE_URL: packaged builds accept only https or loopback http.')
+    // Passed explicitly so the SDK doesn't fall back to the environment.
+    options.baseURL = safe ?? 'https://api.anthropic.com'
+  }
+  return new Anthropic({ ...options, maxRetries: 2 })
 }
 
 /** Key status for Settings and the chat, without decrypting anything. */
