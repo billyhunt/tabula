@@ -9,8 +9,13 @@ export interface DocumentController {
   /** Path of the open drawing, or null while it is untitled. */
   filePath: string | null
   dirty: boolean
-  /** Replaces the canvas with a file's contents and marks it saved. */
-  load(file: OpenedFile): Promise<void>
+  /**
+   * Replaces the canvas with a file's contents and marks it saved. A file that
+   * cannot be read raises an alert, or with `throwOnError` an error. With
+   * `intoBlankOnly` it fails with `WINDOW_NOT_BLANK` instead of replacing a
+   * drawing that appeared while the file was being read.
+   */
+  load(file: OpenedFile, options?: { throwOnError?: boolean; intoBlankOnly?: boolean }): Promise<void>
   /**
    * Replaces the canvas with `contents` (in the format `formatPath` implies)
    * but keeps the current path and leaves the drawing unsaved. Used to
@@ -33,8 +38,8 @@ export interface DocumentController {
    * autosave is off and there are unsaved edits.
    */
   flush(): Promise<boolean>
-  /** Starts a blank drawing, first saving or confirming unsaved edits unless forced. */
-  newDrawing(options?: { force?: boolean }): Promise<void>
+  /** Starts a blank drawing, first saving or confirming unsaved edits. */
+  newDrawing(): Promise<void>
   /** The scene as file contents in the format `targetPath` implies. */
   serialize(targetPath: string): string
 }

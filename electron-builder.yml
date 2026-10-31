@@ -14,7 +14,9 @@ files:
   - licenses/**
 asar: true
 # On macOS electron-builder drops Electron's own licence files, so copy them
-# into Resources/ ourselves.
+# into Resources/ ourselves. They come from node_modules/electron/dist, which
+# Electron only downloads on first use; `npm run package` runs install-electron
+# first so a fresh clone has them too.
 extraResources:
   - from: node_modules/electron/dist/LICENSE
     to: LICENSE.electron.txt

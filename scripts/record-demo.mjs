@@ -18,6 +18,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pngjs from 'pngjs'
+import { acquireDesktopLock, lockHeldByParent } from '../e2e/desktopLock.mjs'
 
 // Both are CommonJS packages.
 const { GIFEncoder, applyPalette, quantize } = gifenc
@@ -103,6 +104,12 @@ const startModel = async () => {
   return { server, url: `http://127.0.0.1:${server.address().port}` }
 }
 
+// The recording opens a real window; it waits for any desktop test run first
+// (`npm run demo` already holds the lock, through e2e/desktopLock.mjs, for the
+// build as well). Nothing is started before that, so a wait that gives up
+// leaves nothing running; and if a later setup step throws, the process
+// exits, which frees the lock.
+const releaseLock = lockHeldByParent() ? async () => undefined : await acquireDesktopLock({ suite: 'tabula demo' })
 const model = await startModel()
 const profile = mkdtempSync(path.join(os.tmpdir(), 'tabula-demo-'))
 // Frames are captured continuously; identical ones are merged into one
@@ -163,6 +170,7 @@ try {
   await app?.close().catch(() => undefined)
   await new Promise((resolve) => model.server.close(resolve))
   rmSync(profile, { recursive: true, force: true })
+  await releaseLock()
 }
 if (captureError) throw captureError
 

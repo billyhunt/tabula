@@ -14,8 +14,9 @@ export const Channels = {
   flushDone: 'window:flush-done',
   setDirty: 'window:set-dirty',
   setTitle: 'window:set-title',
+  fileLoadFailed: 'window:file-load-failed',
   menuCommand: 'menu:command',
-  fileOpened: 'file:opened',
+  takePendingFile: 'file:take-pending',
   fullscreen: 'window:fullscreen',
 
   settingsGet: 'settings:get',
@@ -79,6 +80,9 @@ export interface OpenedFile {
   path: string
   contents: string
 }
+
+/** A window's Finder file: read, or the reason it could not be read. */
+export type PendingFile = OpenedFile | { path: string; error: string }
 
 export interface SaveResult {
   path: string
@@ -228,8 +232,11 @@ export interface TabulaApi {
   onFlushRequest(handler: () => Promise<FlushResult>): () => void
   setDirty(dirty: boolean): void
   setTitle(path: string | null): void
+  /** Tells main a file it handed this window could not be loaded, so the window no longer counts as showing it. */
+  fileLoadFailed(): void
   onMenuCommand(handler: (command: MenuCommand) => void): () => void
-  onFileOpened(handler: (file: OpenedFile) => void): () => void
+  /** The drawing this window was opened for (from Finder), once per page load; null if none. Ask when ready to load it. */
+  takePendingFile(): Promise<PendingFile | null>
   onFullscreen(handler: (fullscreen: boolean) => void): () => void
 
   settings: {

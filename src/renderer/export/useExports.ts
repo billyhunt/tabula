@@ -1,8 +1,12 @@
+import { useEffect } from 'react'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import type { DocumentController } from '../document'
 import { useMenuCommand } from '../menuCommands'
 import { toMermaid } from '../mermaid/toMermaid'
 import { exportScope, renderPdfPages, renderPng, renderSvg } from './render'
+
+/** The "Only selected" switch in Excalidraw's Export image dialog. */
+const ONLY_SELECTED = 'input[name="exportOnlySelected"]'
 
 /** "Board" for ~/Vault/Board.excalidraw.md; "Untitled" before the first save. */
 const exportBaseName = (filePath: string | null) =>
@@ -12,10 +16,30 @@ const exportBaseName = (filePath: string | null) =>
     ?.replace(/(\.excalidraw\.md|\.excalidraw|\.md)$/i, '') || 'Untitled'
 
 /**
- * The Export, Copy As and Import Mermaid menu commands. Exports cover the
- * selection when there is one, else the whole board, and report in a toast.
+ * The Export, Copy As and Import Mermaid menu commands. They cover the whole
+ * board, never just the selection, and report in a toast. Excalidraw's Export
+ * image dialog (⇧⌘E) opens covering the whole board too, with its "Only
+ * selected" switch there to narrow it.
  */
 export const useExports = (api: ExcalidrawImperativeAPI | null, doc: DocumentController) => {
+  // Excalidraw switches "Only selected" on by itself whenever something is
+  // selected, and agents leave what they add selected, so a dialog opened over
+  // a few selected shapes exported just those. The dialog offers no option for
+  // its starting state; switch it off as it appears.
+  useEffect(() => {
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue
+          const input = node.matches(ONLY_SELECTED) ? node : node.querySelector(ONLY_SELECTED)
+          if (input instanceof HTMLInputElement && input.checked) input.click()
+        }
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
+
   /** Runs an export unless the canvas is empty; `action` returns the toast text. */
   const run = (action: (api: ExcalidrawImperativeAPI, name: string) => Promise<string | null>) => {
     if (!api) return
@@ -38,7 +62,7 @@ export const useExports = (api: ExcalidrawImperativeAPI | null, doc: DocumentCon
   const saved = (path: string | null) => (path ? `Saved ${path.split('/').pop()}` : null)
 
   const mermaid = (api: ExcalidrawImperativeAPI) => {
-    const result = toMermaid(exportScope(api, true).elements)
+    const result = toMermaid(exportScope(api).elements)
     return { text: `${result.mermaid}\n`, notes: result.warnings.join(' ') }
   }
 
@@ -48,7 +72,7 @@ export const useExports = (api: ExcalidrawImperativeAPI | null, doc: DocumentCon
         await window.tabula.exports.save({
           format: 'png',
           suggestedName: `${name}.png`,
-          data: await renderPng(api, { selectionOnly: true, scale: 2 }),
+          data: await renderPng(api, { scale: 2 }),
         }),
       ),
     ),
@@ -60,7 +84,7 @@ export const useExports = (api: ExcalidrawImperativeAPI | null, doc: DocumentCon
         await window.tabula.exports.save({
           format: 'svg',
           suggestedName: `${name}.svg`,
-          data: await renderSvg(api, { selectionOnly: true }),
+          data: await renderSvg(api),
         }),
       ),
     ),
@@ -71,7 +95,7 @@ export const useExports = (api: ExcalidrawImperativeAPI | null, doc: DocumentCon
       saved(
         await window.tabula.exports.savePdf({
           suggestedName: `${name}.pdf`,
-          pages: await renderPdfPages(api, { perFrame, selectionOnly: true }),
+          pages: await renderPdfPages(api, { perFrame }),
         }),
       ),
     )
@@ -92,14 +116,14 @@ export const useExports = (api: ExcalidrawImperativeAPI | null, doc: DocumentCon
 
   useMenuCommand('copy-png', () =>
     run(async (api) => {
-      await window.tabula.exports.copyImage(await renderPng(api, { selectionOnly: true, scale: 2 }))
+      await window.tabula.exports.copyImage(await renderPng(api, { scale: 2 }))
       return 'Copied as PNG'
     }),
   )
 
   useMenuCommand('copy-svg', () =>
     run(async (api) => {
-      await window.tabula.exports.copyText(await renderSvg(api, { selectionOnly: true }))
+      await window.tabula.exports.copyText(await renderSvg(api))
       return 'Copied as SVG'
     }),
   )
