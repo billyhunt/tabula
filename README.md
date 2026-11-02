@@ -163,14 +163,21 @@ connections (MCP)** ▸ **Copy Claude Code setup command**), run it once in
 Terminal, then start a new Claude Code session:
 
 ```bash
-claude mcp remove --scope user tabula >/dev/null 2>&1; claude mcp add --scope user --transport http tabula http://127.0.0.1:7337/mcp --header "Authorization: Bearer <token>"
+claude mcp remove --scope local tabula >/dev/null 2>&1; claude mcp remove --scope user tabula >/dev/null 2>&1; claude mcp add --scope user --transport http tabula http://127.0.0.1:7337/mcp --header "Authorization: Bearer <token>"
 ```
 
 It registers Tabula for every project (`--scope user`; Claude Code's default
-scope only covers the folder the command ran in) and replaces any earlier
-registration, so after **Reset token** or a port change, run the new command
-the same way. Tabula has to be running for Claude Code to reach it;
+scope, local, only covers the folder or git repository the command ran in).
+First it removes the user-scope `tabula` entry and the local one for the
+folder it runs in, so after **Reset token** or a port change, run the new
+command the same way. Tabula has to be running for Claude Code to reach it;
 `claude mcp list` shows whether it connected.
+
+**Upgrading from an older setup command:** before November 2026 the command
+registered Tabula at local scope, and a local entry overrides the user one in
+its folder, keeping the old token there. In each folder (or git repository)
+where you ran an older command, run `claude mcp remove --scope local tabula`
+once.
 
 The server listens on 127.0.0.1 only, needs that token (kept in Tabula's
 app-support folder; Settings can replace it), and refuses requests from web
