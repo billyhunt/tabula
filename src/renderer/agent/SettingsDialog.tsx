@@ -149,7 +149,7 @@ const SettingsPanel = ({ close, askForKey }: { close: () => void; askForKey: boo
   const copySetup = async () => {
     try {
       await window.tabula.exports.copyText(await window.tabula.agent.setupCommand())
-      showMcpNote('Copied. Paste it into a terminal to connect Claude Code.')
+      showMcpNote('Copied. Run it in Terminal, then start a new Claude Code session.')
     } catch (err) {
       showMcpNote(`Couldn't copy: ${remoteErrorMessage(err)}`)
     }
@@ -158,7 +158,7 @@ const SettingsPanel = ({ close, askForKey }: { close: () => void; askForKey: boo
   const resetToken = async () => {
     try {
       await window.tabula.agent.resetToken()
-      showMcpNote('New token made. Connected agents need the new setup command.')
+      showMcpNote('New token made. Run the setup command again to reconnect Claude Code.')
     } catch (err) {
       showMcpNote(`Couldn't reset: ${remoteErrorMessage(err)}`)
     }
@@ -190,10 +190,10 @@ const SettingsPanel = ({ close, askForKey }: { close: () => void; askForKey: boo
   const keySource = status?.keys[provider]
   const keyLine =
     keySource === 'env'
-      ? `Using ${info.envVar} from the environment. It takes precedence over a saved key.`
+      ? `Using ${info.envVar} from the environment Tabula started in. While it is set, a key pasted here is not used.`
       : keySource === 'saved'
         ? 'A key is saved, encrypted with your Mac’s Keychain. Paste another to replace it.'
-        : `Not set. Paste your ${info.label} API key to use Ask and Text to diagram.`
+        : `Not set. Paste your ${info.label} API key to use the chat and Text to diagram.`
 
   return (
     <div
@@ -235,6 +235,10 @@ const SettingsPanel = ({ close, askForKey }: { close: () => void; askForKey: boo
 
             <section className="settings-section" aria-labelledby={`${fieldId}-mcp`}>
               <h3 id={`${fieldId}-mcp`}>Agent connections (MCP)</h3>
+              <p className="settings-status">
+                Claude Code connects with the token in the setup command, not an API key. Run
+                the command once in Terminal, then start a new Claude Code session.
+              </p>
               <label className="settings-check">
                 <input
                   type="checkbox"
@@ -282,6 +286,10 @@ const SettingsPanel = ({ close, askForKey }: { close: () => void; askForKey: boo
 
             <section className="settings-section" aria-labelledby={`${fieldId}-ai`}>
               <h3 id={`${fieldId}-ai`}>AI</h3>
+              <p className="settings-status">
+                For Tabula’s own chat and Text to diagram. Agents connected over MCP don’t need
+                this key.
+              </p>
               {askForKey && !status?.keyConfigured && (
                 <p className="settings-ask" role="alert">
                   Add your API key.

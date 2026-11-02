@@ -99,12 +99,18 @@ release yet.
 ## AI settings
 
 The chat and Text to diagram call a model with your own key, from Anthropic
-or [OpenRouter](https://openrouter.ai). The first message you send without a
-key opens **Settings** (⌘,) at the key field. Pick the provider and paste its
-API key. Tabula encrypts the key with a secret held in your macOS Keychain
-(Electron `safeStorage`) and stores it in its own app data folder; the key
-never leaves the app's main process. `ANTHROPIC_API_KEY` or
-`OPENROUTER_API_KEY` in the environment takes precedence over a saved key.
+or [OpenRouter](https://openrouter.ai). This key is for Tabula's own AI only;
+Claude Code and other agents connected over MCP don't need it (see
+[Connecting an agent](#connecting-an-agent)). The first message you send
+without a key opens **Settings** (⌘,) at the key field. Pick the provider and
+paste its API key. Tabula encrypts the key with a secret held in your macOS
+Keychain (Electron `safeStorage`) and stores it in its own app data folder;
+the key never leaves the app's main process.
+
+For development, `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY` in the
+environment Tabula starts in (such as the shell running `npm run dev`) takes
+precedence over a saved key, and Settings says so. A copy opened from the Dock
+or Finder doesn't see your shell's variables, so use Settings there.
 
 **Models in the chat** lists the provider's models (Anthropic's need the key
 first; OpenRouter's are cut to those that can use tools, which the chat
@@ -151,12 +157,27 @@ the system frees as soon as its holder exits. Pass Playwright options after
 ## Connecting an agent
 
 The MCP server starts with Tabula (turn it off with **Agent ▸ Allow Agent
-Connections (MCP)** in the menu bar). Copy the setup command from Settings and
-run it once:
+Connections (MCP)** in the menu bar). Claude Code connects with a token Tabula
+makes, not an API key. Copy the setup command from Settings (**Agent
+connections (MCP)** ▸ **Copy Claude Code setup command**), run it once in
+Terminal, then start a new Claude Code session:
 
 ```bash
-claude mcp add --transport http tabula http://127.0.0.1:7337/mcp --header "Authorization: Bearer <token>"
+claude mcp remove --scope local tabula >/dev/null 2>&1; claude mcp remove --scope user tabula >/dev/null 2>&1; claude mcp add --scope user --transport http tabula http://127.0.0.1:7337/mcp --header "Authorization: Bearer <token>"
 ```
+
+It registers Tabula for every project (`--scope user`; Claude Code's default
+scope, local, only covers the folder or git repository the command ran in).
+First it removes the user-scope `tabula` entry and the local one for the
+folder it runs in, so after **Reset token** or a port change, run the new
+command the same way. Tabula has to be running for Claude Code to reach it;
+`claude mcp list` shows whether it connected.
+
+**Upgrading from an older setup command:** before November 2026 the command
+registered Tabula at local scope, and a local entry overrides the user one in
+its folder, keeping the old token there. In each folder (or git repository)
+where you ran an older command, run `claude mcp remove --scope local tabula`
+once.
 
 The server listens on 127.0.0.1 only, needs that token (kept in Tabula's
 app-support folder; Settings can replace it), and refuses requests from web

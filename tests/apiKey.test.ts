@@ -33,7 +33,15 @@ describe('resolveApiKey', () => {
   it('says how to add a key when there is none', () => {
     expect(() => resolveApiKey('openrouter', {}, () => null)).toThrow(ApiKeyError)
     expect(() => resolveApiKey('openrouter', {}, () => null)).toThrow(noKeyMessage('openrouter'))
-    expect(noKeyMessage('openrouter')).toMatch(/OpenRouter.*Settings.*OPENROUTER_API_KEY/)
+  })
+
+  // One place to put the key: a copy opened from the Dock never sees the
+  // shell's environment, so the message must not offer it.
+  it('sends the user to Settings only', () => {
+    expect(noKeyMessage('anthropic')).toMatch(/Anthropic.*Settings/)
+    expect(noKeyMessage('anthropic')).not.toMatch(/ANTHROPIC_API_KEY/)
+    expect(noKeyMessage('openrouter')).toMatch(/OpenRouter.*Settings/)
+    expect(noKeyMessage('openrouter')).not.toMatch(/OPENROUTER_API_KEY/)
   })
 })
 

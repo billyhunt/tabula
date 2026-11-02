@@ -275,7 +275,11 @@ export interface TabulaApi {
     respond(response: AgentResponse): void
     onActivity(handler: (activity: AgentActivity) => void): () => void
     status(): Promise<AgentStatus>
-    /** The `claude mcp add …` command, including the connection token. */
+    /**
+     * The Claude Code setup command, including the connection token: it removes
+     * this folder's local and the user-scope `tabula` entries, then adds Tabula
+     * at user scope.
+     */
     setupCommand(): Promise<string>
     resetToken(): Promise<void>
     /** Encrypts and saves the key for `provider`; null removes it. */

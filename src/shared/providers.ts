@@ -1,4 +1,4 @@
-/** The model services Ask and Text to diagram can call. */
+/** The model services the chat and Text to diagram can call. */
 
 export type Provider = 'anthropic' | 'openrouter'
 

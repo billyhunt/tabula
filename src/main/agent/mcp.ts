@@ -20,6 +20,7 @@ import { createWindow, focusedWindow, hasPendingFile } from '../windows'
 import { callCanvasTool, reportActivity } from './bridge'
 import { checkMcpRequest } from './mcpChecks'
 import { makeBlankWindow } from './blankWindow'
+import { setupCommandFor } from './mcpSetup'
 import { FILE_TOOLS, type ToolWindows } from './mcpFileTools'
 
 /**
@@ -305,12 +306,9 @@ export const mcpStatus = (): AgentStatus['mcp'] => {
   }
 }
 
-/** The command that registers Tabula with Claude Code, token included. */
-export const mcpSetupCommand = async (): Promise<string> => {
-  const token = await loadToken()
-  const { url } = mcpStatus()
-  return `claude mcp add --transport http tabula ${url} --header "Authorization: Bearer ${token}"`
-}
+/** The Claude Code setup command for the current port and token. */
+export const mcpSetupCommand = async (): Promise<string> =>
+  setupCommandFor(mcpStatus().url, await loadToken())
 
 /** Replaces the token, dropping every client connected with the old one. */
 export const resetMcpToken = (): Promise<void> =>
