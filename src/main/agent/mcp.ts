@@ -305,11 +305,19 @@ export const mcpStatus = (): AgentStatus['mcp'] => {
   }
 }
 
-/** The command that registers Tabula with Claude Code, token included. */
+/**
+ * The command that registers Tabula with Claude Code, token included. User
+ * scope, so every project sees it (the default, local, is one folder only);
+ * any earlier registration is removed first, since `claude mcp add` refuses a
+ * name it already has, which would leave a reset token unusable.
+ */
 export const mcpSetupCommand = async (): Promise<string> => {
   const token = await loadToken()
   const { url } = mcpStatus()
-  return `claude mcp add --transport http tabula ${url} --header "Authorization: Bearer ${token}"`
+  return (
+    'claude mcp remove --scope user tabula >/dev/null 2>&1; ' +
+    `claude mcp add --scope user --transport http tabula ${url} --header "Authorization: Bearer ${token}"`
+  )
 }
 
 /** Replaces the token, dropping every client connected with the old one. */

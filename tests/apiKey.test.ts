@@ -33,7 +33,7 @@ describe('resolveApiKey', () => {
   it('says how to add a key when there is none', () => {
     expect(() => resolveApiKey('openrouter', {}, () => null)).toThrow(ApiKeyError)
     expect(() => resolveApiKey('openrouter', {}, () => null)).toThrow(noKeyMessage('openrouter'))
-    expect(noKeyMessage('openrouter')).toMatch(/OpenRouter.*Settings.*OPENROUTER_API_KEY/)
+    expect(noKeyMessage('openrouter')).toMatch(/OpenRouter.*Settings/)
   })
 })
 

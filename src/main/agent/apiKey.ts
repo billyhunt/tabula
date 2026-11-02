@@ -22,13 +22,8 @@ export const keySource = (provider: Provider, env: KeyEnv, saved: boolean): KeyS
   return saved ? 'saved' : null
 }
 
-export const noKeyMessage = (provider: Provider) => {
-  const { label, envVar } = PROVIDER_INFO[provider]
-  return (
-    `No ${label} API key is set up. Open Settings (⌘,) and paste one, ` +
-    `or start Tabula with ${envVar} set.`
-  )
-}
+export const noKeyMessage = (provider: Provider) =>
+  `No ${PROVIDER_INFO[provider].label} API key is set up. Paste one in Settings (⌘,).`
 
 export const resolveApiKey = (
   provider: Provider,
