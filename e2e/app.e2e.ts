@@ -724,6 +724,24 @@ test('Escape closes the Export image dialog after an export moves focus out of i
     await expect(dialog).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
+
+    // A failed export opens an error dialog on top, while focus is on the
+    // export button underneath or already lost: Escape closes the error first.
+    await page.evaluate(() =>
+      Reflect.set(globalThis, 'showSaveFilePicker', async () => {
+        throw new Error('The disk is full.')
+      }),
+    )
+    await sendCommand('export-image')
+    await expect(dialog).toBeVisible()
+    await page.getByRole('button', { name: 'Export to PNG' }).click()
+    const dialogs = page.locator('.excalidraw-modal-container .Modal')
+    await expect(dialogs).toHaveCount(2)
+    await page.keyboard.press('Escape')
+    await expect(dialogs).toHaveCount(1)
+    await expect(dialog).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
   } finally {
     await page.evaluate(() => Reflect.set(globalThis, 'showSaveFilePicker', Reflect.get(globalThis, 'realPicker')))
   }
