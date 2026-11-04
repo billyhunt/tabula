@@ -671,6 +671,27 @@ test('the Export image dialog opens on the whole board even with something selec
   await expect(onlySelected).toHaveCount(0)
 })
 
+test('Escape closes the Export image dialog after an export moves focus out of it', async () => {
+  // The save panel is stubbed: the user cancels it after a moment.
+  await page.evaluate(() => {
+    const picker = window as unknown as { showSaveFilePicker: () => Promise<never> }
+    picker.showSaveFilePicker = async () => {
+      const { promise, resolve } = Promise.withResolvers<void>()
+      setTimeout(resolve, 200)
+      await promise
+      throw new DOMException('The user aborted a request.', 'AbortError')
+    }
+  })
+  await sendCommand('export-image')
+  const dialog = page.locator('.ImageExportModal')
+  await expect(dialog).toBeVisible()
+  await page.getByRole('button', { name: 'Export to PNG' }).click()
+  // Once the export settles, focus is on the page body, outside the dialog.
+  await expect.poll(() => page.evaluate(() => document.activeElement === document.body)).toBe(true)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+})
+
 test('an existing box takes a label from a double-click anywhere, or from the Label field', async () => {
   await inNewWindow(() => call('new_drawing'))
   const drawBox = async (x: number, y: number) => {
