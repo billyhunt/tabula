@@ -37,6 +37,7 @@ import {
 } from './format/obsidian'
 import { useMermaidPaste } from './mermaid/useMermaidPaste'
 import { useMenuCommand } from './menuCommands'
+import { useDialogEscape } from './useDialogEscape'
 import { useSystemTheme } from './useSystemTheme'
 import { useAutosave, useAutosaveEnabled } from './versions/useAutosave'
 import { VersionsDialog } from './versions/VersionsDialog'
@@ -325,6 +326,7 @@ export const App = () => {
   useCanvasTools(api, doc)
   useEasyLabels(api)
   useLibrary(api)
+  useDialogEscape()
   const onPaste = useMermaidPaste(api)
   const settingsDialog = useSettingsDialog()
   const chat = useChat(api, settingsDialog.show, filePath)

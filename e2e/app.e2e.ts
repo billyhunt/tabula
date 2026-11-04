@@ -671,6 +671,82 @@ test('the Export image dialog opens on the whole board even with something selec
   await expect(onlySelected).toHaveCount(0)
 })
 
+test('Escape closes the Export image dialog after an export moves focus out of it', async () => {
+  await call('add_elements', { elements: [{ type: 'rectangle', x: 0, y: 300, width: 120, height: 60 }] })
+  // The save panel is stubbed: the user cancels it after a moment.
+  await page.evaluate(() => {
+    Reflect.set(globalThis, 'realPicker', Reflect.get(globalThis, 'showSaveFilePicker'))
+    Reflect.set(globalThis, 'pickerSettled', false)
+    Reflect.set(globalThis, 'showSaveFilePicker', async () => {
+      const { promise, resolve } = Promise.withResolvers<void>()
+      setTimeout(resolve, 200)
+      await promise
+      Reflect.set(globalThis, 'pickerSettled', true)
+      throw new DOMException('The user aborted a request.', 'AbortError')
+    })
+  })
+  const dialog = page.locator('.ImageExportModal')
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  try {
+    await sendCommand('export-image')
+    await expect(dialog).toBeVisible()
+    await page.getByRole('button', { name: 'Export to PNG' }).click()
+    // Once the cancelled export has settled, focus is on the page body.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => Reflect.get(globalThis, 'pickerSettled') === true && document.activeElement === document.body,
+        ),
+      )
+      .toBe(true)
+    // Records whether the Escape got past the dialog to the page (the canvas).
+    await page.evaluate(() => {
+      Reflect.set(globalThis, 'escapeReachedPage', false)
+      document.addEventListener(
+        'keydown',
+        (event) => {
+          if (event.key === 'Escape' && event.isTrusted) Reflect.set(globalThis, 'escapeReachedPage', true)
+        },
+        { once: true },
+      )
+    })
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    expect(await page.evaluate(() => Reflect.get(globalThis, 'escapeReachedPage'))).toBe(false)
+
+    // Settings open on top of the dialog keeps its own Escape.
+    await sendCommand('export-image')
+    await expect(dialog).toBeVisible()
+    await sendCommand('settings')
+    await expect(settings).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(settings).toHaveCount(0)
+    await expect(dialog).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+
+    // A failed export opens an error dialog on top, while focus is on the
+    // export button underneath or already lost: Escape closes the error first.
+    await page.evaluate(() =>
+      Reflect.set(globalThis, 'showSaveFilePicker', async () => {
+        throw new Error('The disk is full.')
+      }),
+    )
+    await sendCommand('export-image')
+    await expect(dialog).toBeVisible()
+    await page.getByRole('button', { name: 'Export to PNG' }).click()
+    const dialogs = page.locator('.excalidraw-modal-container .Modal')
+    await expect(dialogs).toHaveCount(2)
+    await page.keyboard.press('Escape')
+    await expect(dialogs).toHaveCount(1)
+    await expect(dialog).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+  } finally {
+    await page.evaluate(() => Reflect.set(globalThis, 'showSaveFilePicker', Reflect.get(globalThis, 'realPicker')))
+  }
+})
+
 test('an existing box takes a label from a double-click anywhere, or from the Label field', async () => {
   await inNewWindow(() => call('new_drawing'))
   const drawBox = async (x: number, y: number) => {
